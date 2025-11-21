@@ -1,5 +1,6 @@
 """AINS FastAPI Application"""
 
+from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, Depends, Query
 from pydantic import BaseModel
 from typing import Optional, List, Dict
@@ -226,8 +227,8 @@ def publish_capability(agent_id: str, cap: CapabilityPublish, db: Session = Depe
         latency_p99_ms=cap.latency_p99_ms,
         availability_percent=cap.availability_percent,
         deprecated=False,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
     )
     db.add(new_cap)
     db.commit()
