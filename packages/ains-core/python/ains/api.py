@@ -1,12 +1,12 @@
 """AINS FastAPI Application"""
 
-from datetime import datetime, timezone
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, HTTPException, Depends, Query
 from pydantic import BaseModel
 from typing import Optional, List, Dict
-from datetime import datetime, timedelta
-from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import func, create_engine
 import sys
 import os
 
@@ -17,9 +17,13 @@ from aicp import KeyPair  # Optional for signature/data management
 from .db import Agent, AgentTag, Capability, TrustRecord, get_db, create_tables
 from .cache import cache
 from .trust import calculate_trust_score, update_trust_score
-from fastapi_utils.tasks import repeat_every
 
-app = FastAPI(title="AINS API", version="0.1.0")
+# Define database URL locally (not imported from db.py)
+SQLALCHEMY_DATABASE_URL = "sqlite:///./ains.db"
+
+# Create SessionLocal for background tasks
+engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 class AgentRegistration(BaseModel):
@@ -63,10 +67,53 @@ class Heartbeat(BaseModel):
     metrics: Optional[dict] = None
 
 
-@app.on_event("startup")
-def startup():
+# Lifespan event handler (replaces @app.on_event)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup logic
     create_tables()
     print("✅ AINS API started - Database tables created")
+    
+    # Start background task for monitoring agent health
+    import asyncio
+    task = asyncio.create_task(monitor_agent_health_loop())
+    
+    yield
+    
+    # Shutdown logic
+    try:
+        task.cancel()
+        await task
+    except asyncio.CancelledError:
+        pass
+    print("AINS API shutting down...")
+
+
+app = FastAPI(title="AINS API", version="0.1.0", lifespan=lifespan)
+
+
+async def monitor_agent_health_loop():
+    """Background task to monitor agent health"""
+    import asyncio
+    while True:
+        try:
+            await asyncio.sleep(60)  # Run every 60 seconds
+            session = SessionLocal()
+            threshold = datetime.now(timezone.utc) - timedelta(minutes=10)
+            stale_agents = session.query(Agent).filter(
+                Agent.last_heartbeat < threshold,
+                Agent.status == "ACTIVE"
+            ).all()
+            for agent in stale_agents:
+                agent.status = "INACTIVE"
+                cache.invalidate_agent(agent.agent_id)
+            session.commit()
+            session.close()
+        except asyncio.CancelledError:
+            # Task is being cancelled during shutdown
+            break
+        except Exception as e:
+            print(f"Error in health monitoring: {e}")
 
 
 @app.get("/health")
@@ -95,7 +142,7 @@ def register_agent(registration: AgentRegistration, db: Session = Depends(get_db
         description=registration.description,
         endpoint_url=registration.endpoint,
         status='ACTIVE',
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
         trust_score=50.0
     )
     db.add(new_agent)
@@ -213,7 +260,7 @@ def publish_capability(agent_id: str, cap: CapabilityPublish, db: Session = Depe
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    cap_id = f"{agent_id}:{cap.name}:{datetime.utcnow().isoformat()}"
+    cap_id = f"{agent_id}:{cap.name}:{datetime.now(timezone.utc).isoformat()}"
     new_cap = Capability(
         capability_id=cap_id,
         agent_id=agent_id,
@@ -307,7 +354,7 @@ def send_heartbeat(agent_id: str, heartbeat: Heartbeat, db: Session = Depends(ge
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    agent.last_heartbeat = datetime.utcnow()
+    agent.last_heartbeat = datetime.now(timezone.utc)
     agent.status = heartbeat.status
 
     # Update uptime and metrics tracking here if needed
@@ -315,17 +362,3 @@ def send_heartbeat(agent_id: str, heartbeat: Heartbeat, db: Session = Depends(ge
     cache.invalidate_agent(agent_id)
     db.commit()
     return {"acknowledged": True, "next_heartbeat_in": 300}
-
-
-@app.on_event("startup")
-@repeat_every(seconds=60)
-def monitor_agent_health():
-    session = SessionLocal()
-    threshold = datetime.utcnow() - timedelta(minutes=10)
-    stale_agents = session.query(Agent).filter(Agent.last_heartbeat < threshold,
-                                               Agent.status == "ACTIVE").all()
-    for agent in stale_agents:
-        agent.status = "INACTIVE"
-        cache.invalidate_agent(agent.agent_id)
-    session.commit()
-    session.close()

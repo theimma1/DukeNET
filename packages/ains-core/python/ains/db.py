@@ -1,10 +1,12 @@
 """AINS Database Models"""
+import os
+from datetime import datetime, timezone
+
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./ains.db")
 
 from sqlalchemy import create_engine, Column, String, DateTime, Integer, Boolean, DECIMAL, Text, ForeignKey, JSON
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
-from datetime import datetime
-import os
 
 Base = declarative_base()
 
@@ -23,6 +25,12 @@ else:
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
+# Helper function for timezone-aware datetime defaults
+def utc_now():
+    """Return current UTC time with timezone awareness"""
+    return datetime.now(timezone.utc)
+
+
 class Agent(Base):
     """Agent registry table"""
     __tablename__ = "agents"
@@ -33,7 +41,7 @@ class Agent(Base):
     description = Column(Text)
     endpoint_url = Column(String(255))
     status = Column(String(20), default='ACTIVE')
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
     last_heartbeat = Column(DateTime)
     owner_address = Column(String(42))
     avatar_url = Column(String(255))
@@ -81,8 +89,8 @@ class Capability(Base):
     availability_percent = Column(DECIMAL(5,2))
     
     deprecated = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
     
     # Relationships
     agent = relationship("Agent", back_populates="capabilities")
@@ -121,7 +129,7 @@ class TrustRecord(Base):
     fraud_flags = Column(Integer, default=0)
     last_audit = Column(DateTime)
     
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
     
     # Relationships
     agent = relationship("Agent", back_populates="trust_record")
