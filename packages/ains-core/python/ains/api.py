@@ -1,4 +1,7 @@
 """AINS FastAPI Application"""
+import uuid
+from .schemas import TaskSubmission, TaskResponse
+from .schemas import TaskSubmission as TaskSubmit
 from typing import Optional, List
 from fastapi import Query
 import json
@@ -542,6 +545,14 @@ def submit_task(task_submission: TaskSubmission, db: Session = Depends(get_db)):
     Submit a new AI task for execution.
     Tasks are validated, queued, and automatically routed to suitable agents.
     """
+    # Validate that the client agent exists
+    client = db.query(Agent).filter(Agent.agent_id == task_submission.client_id).first()
+    if not client:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Client agent '{task_submission.client_id}' not found"
+        )
+    
     # Validate that the required capability exists
     capability_exists = db.query(Capability).filter(
         func.lower(Capability.name) == task_submission.capability_required.lower(),
@@ -565,7 +576,7 @@ def submit_task(task_submission: TaskSubmission, db: Session = Depends(get_db)):
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid expires_at timestamp format")
     
-    # Create task
+    # Create new task
     new_task = Task(
         task_id=task_id,
         client_id=task_submission.client_id,
@@ -573,19 +584,101 @@ def submit_task(task_submission: TaskSubmission, db: Session = Depends(get_db)):
         capability_required=task_submission.capability_required,
         input_data=task_submission.input_data,
         priority=task_submission.priority,
-        metadata=task_submission.metadata,
-        timeout_seconds=task_submission.timeout_seconds,
-        max_retries=task_submission.max_retries,
         expires_at=expires_at,
-        status='PENDING',
+        status="PENDING",
         created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc)
+        updated_at=datetime.now(timezone.utc),
+        # Retry fields (from Sprint 4.1)
+        max_retries=getattr(task_submission, 'max_retries', 3),
+        retry_count=0,
+        retry_policy=getattr(task_submission, 'retry_policy', 'exponential')
     )
     
     db.add(new_task)
     db.commit()
     db.refresh(new_task)
     
+    # Return the created task
+    return TaskResponse(
+        task_id=new_task.task_id,
+        client_id=new_task.client_id,
+        task_type=new_task.task_type,
+        capability_required=new_task.capability_required,
+        status=new_task.status,
+        priority=new_task.priority,
+        assigned_agent_id=new_task.assigned_agent_id,
+        created_at=new_task.created_at.isoformat(),
+        updated_at=new_task.updated_at.isoformat(),
+        assigned_at=new_task.assigned_at.isoformat() if new_task.assigned_at else None,
+        started_at=new_task.started_at.isoformat() if new_task.started_at else None,
+        completed_at=new_task.completed_at.isoformat() if new_task.completed_at else None,
+        result_data=new_task.result_data,
+        error_message=new_task.error_message,
+        retry_count=new_task.retry_count
+    )
+    
+
+
+@app.post("/aitp/tasks", response_model=TaskResponse)
+def submit_task(task_submission: TaskSubmission, db: Session = Depends(get_db)):
+    """
+    Submit a new AI task for execution.
+    Tasks are validated, queued, and automatically routed to suitable agents.
+    """
+    # Validate that the client agent exists
+    client = db.query(Agent).filter(Agent.agent_id == task_submission.client_id).first()
+    if not client:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Client agent '{task_submission.client_id}' not found"
+        )
+    
+    # Validate that the required capability exists
+    capability_exists = db.query(Capability).filter(
+        func.lower(Capability.name) == task_submission.capability_required.lower(),
+        Capability.deprecated == False
+    ).first()
+    
+    if not capability_exists:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No agents provide capability '{task_submission.capability_required}'"
+        )
+    
+    # Generate unique task ID
+    task_id = f"task_{uuid.uuid4().hex[:16]}"
+    
+    # Parse expiration timestamp if provided
+    expires_at = None
+    if task_submission.expires_at:
+        try:
+            expires_at = datetime.fromisoformat(task_submission.expires_at.replace('Z', '+00:00'))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid expires_at timestamp format")
+    
+    # Create new task with retry fields (optional - use defaults if not provided)
+    new_task = Task(
+        task_id=task_id,
+        client_id=task_submission.client_id,
+        task_type=task_submission.task_type,
+        capability_required=task_submission.capability_required,
+        input_data=task_submission.input_data,
+        priority=task_submission.priority,
+        expires_at=expires_at,
+        status="PENDING",
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+        # Retry fields - use getattr with defaults for backward compatibility
+        max_retries=getattr(task_submission, 'max_retries', 3),
+        retry_count=0,
+        retry_policy=getattr(task_submission, 'retry_policy', 'exponential')
+    )
+    
+    db.add(new_task)
+    db.commit()
+    db.refresh(new_task)
+    
+    # Return the created task as TaskResponse
     return TaskResponse(
         task_id=new_task.task_id,
         client_id=new_task.client_id,
@@ -604,34 +697,6 @@ def submit_task(task_submission: TaskSubmission, db: Session = Depends(get_db)):
         retry_count=new_task.retry_count
     )
 
-
-@app.get("/aitp/tasks/{task_id}", response_model=TaskResponse)
-def get_task(task_id: str, db: Session = Depends(get_db)):
-    """
-    Retrieve task status and results by task ID.
-    """
-    task = db.query(Task).filter(Task.task_id == task_id).first()
-    
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    
-    return TaskResponse(
-        task_id=task.task_id,
-        client_id=task.client_id,
-        task_type=task.task_type,
-        capability_required=task.capability_required,
-        status=task.status,
-        priority=task.priority,
-        assigned_agent_id=task.assigned_agent_id,
-        created_at=task.created_at.isoformat(),
-        updated_at=task.updated_at.isoformat(),
-        assigned_at=task.assigned_at.isoformat() if task.assigned_at else None,
-        started_at=task.started_at.isoformat() if task.started_at else None,
-        completed_at=task.completed_at.isoformat() if task.completed_at else None,
-        result_data=task.result_data,
-        error_message=task.error_message,
-        retry_count=task.retry_count
-    )
 
 
 @app.get("/aitp/tasks")
@@ -815,4 +880,40 @@ async def aitp_health_check(db: Session = Depends(get_db)):
             "failed_tasks": status_summary.get('FAILED', 0),
             "failure_rate_percent": round(failure_rate, 2)
         }
+    }
+# Add this endpoint to your api.py
+
+@app.post("/aitp/tasks/{task_id}/retry")
+async def manually_retry_task(task_id: str, db: Session = Depends(get_db)):
+    """Manually trigger a task retry
+    
+    This allows clients to retry a failed task immediately
+    """
+    from .retry import schedule_retry
+    
+    task = db.query(Task).filter(Task.task_id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    # Only retry failed tasks
+    if task.status not in ["FAILED"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Can only retry FAILED tasks, current status: {task.status}"
+        )
+    
+    # Schedule retry
+    success = schedule_retry(db, task_id)
+    
+    if not success:
+        raise HTTPException(
+            status_code=400,
+            detail="Task has exceeded maximum retries or is not retryable"
+        )
+    
+    return {
+        "task_id": task_id,
+        "status": "PENDING",
+        "retry_count": task.retry_count,
+        "next_retry_at": task.next_retry_at
     }

@@ -166,9 +166,11 @@ class Task(Base):
     error_message = Column(Text)  # Error details if failed
     
     # Retry and failure handling
-    retry_count = Column(Integer, default=0)
     max_retries = Column(Integer, default=3)
-    timeout_seconds = Column(Integer, default=300)
+    retry_count = Column(Integer, default=0)
+    next_retry_at = Column(DateTime(timezone=True), nullable=True)
+    retry_policy = Column(String, default="exponential")  # exponential, linear, fixed
+    last_error = Column(Text, nullable=True)
     
     # Timestamps
     created_at = Column(DateTime, default=utc_now)
