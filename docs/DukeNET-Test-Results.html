@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DukeNET Test Results Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+        }
+
+        .stat-card {
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 40px 0 rgba(31, 38, 135, 0.25);
+        }
+
+        .chart-container {
+            background: white;
+            border-radius: 1rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            padding: 1.5rem;
+            transition: box-shadow 0.3s ease;
+        }
+
+        .chart-container:hover {
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+        }
+
+        .pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: .5;
+            }
+        }
+
+        .gradient-text {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .metric-icon {
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+            font-size: 24px;
+        }
+
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            z-index: 1000;
+        }
+    </style>
+</head>
+
+<body class="min-h-screen p-4 sm:p-8">
+
+    <div class="max-w-7xl mx-auto">
+        <!-- Header -->
+        <header class="glass-card rounded-2xl p-6 mb-8">
+            <div class="flex items-center justify-between flex-wrap gap-4">
+                <div>
+                    <h1 class="text-4xl font-black gradient-text mb-2">DukeNET Test Dashboard</h1>
+                    <p class="text-gray-600 font-medium">Real-time test execution monitoring and analytics</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button id="refresh-btn"
+                        class="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg font-semibold hover:shadow-lg transition-all">
+                        <span id="refresh-icon">🔄</span> Refresh
+                    </button>
+                    <div class="text-sm text-gray-500">
+                        Last updated: <span id="last-update" class="font-semibold">Loading...</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Loading Spinner -->
+        <div id="loading-spinner" class="glass-card rounded-2xl p-12 flex flex-col justify-center items-center">
+            <div class="relative">
+                <div class="animate-spin rounded-full h-16 w-16 border-4 border-purple-200 border-t-purple-600"></div>
+                <div class="absolute inset-0 flex items-center justify-center">
+                    <div class="h-8 w-8 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 pulse"></div>
+                </div>
+            </div>
+            <p class="mt-6 text-indigo-700 font-semibold text-lg">Loading test data...</p>
+        </div>
+
+        <!-- Dashboard Content -->
+        <div id="dashboard-content" style="display: none;">
+
+            <!-- Summary Stats -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <div class="glass-card rounded-xl p-6 stat-card">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="metric-icon bg-emerald-100 text-emerald-600">✓</div>
+                        <span
+                            class="text-xs font-bold text-emerald-600 bg-emerald-100 px-3 py-1 rounded-full">PASSED</span>
+                    </div>
+                    <div class="text-3xl font-black text-gray-800 mb-1" id="stat-passed">0</div>
+                    <div class="text-sm text-gray-500 font-medium">Tests Passed</div>
+                    <div class="mt-2 text-xs font-semibold" id="stat-passed-percent">0%</div>
+                </div>
+
+                <div class="glass-card rounded-xl p-6 stat-card">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="metric-icon bg-red-100 text-red-600">✗</div>
+                        <span class="text-xs font-bold text-red-600 bg-red-100 px-3 py-1 rounded-full">FAILED</span>
+                    </div>
+                    <div class="text-3xl font-black text-gray-800 mb-1" id="stat-failed">0</div>
+                    <div class="text-sm text-gray-500 font-medium">Tests Failed</div>
+                    <div class="mt-2 text-xs font-semibold" id="stat-failed-percent">0%</div>
+                </div>
+
+                <div class="glass-card rounded-xl p-6 stat-card">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="metric-icon bg-amber-100 text-amber-600">⊘</div>
+                        <span
+                            class="text-xs font-bold text-amber-600 bg-amber-100 px-3 py-1 rounded-full">SKIPPED</span>
+                    </div>
+                    <div class="text-3xl font-black text-gray-800 mb-1" id="stat-skipped">0</div>
+                    <div class="text-sm text-gray-500 font-medium">Tests Skipped</div>
+                    <div class="mt-2 text-xs font-semibold" id="stat-skipped-percent">0%</div>
+                </div>
+
+                <div class="glass-card rounded-xl p-6 stat-card">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="metric-icon bg-indigo-100 text-indigo-600">Σ</div>
+                        <span
+                            class="text-xs font-bold text-indigo-600 bg-indigo-100 px-3 py-1 rounded-full">TOTAL</span>
+                    </div>
+                    <div class="text-3xl font-black text-gray-800 mb-1" id="stat-total">0</div>
+                    <div class="text-sm text-gray-500 font-medium">Total Tests</div>
+                    <div class="mt-2">
+                        <div class="text-xs font-semibold" id="pass-rate">Pass Rate: 0%</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts Grid -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+
+                <!-- Donut Chart -->
+                <div class="lg:col-span-1 chart-container">
+                    <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                        <span>📊</span> Overall Status Distribution
+                    </h2>
+                    <div id="chart-status-donut"></div>
+                </div>
+
+                <!-- Category Bar Chart -->
+                <div class="lg:col-span-2 chart-container">
+                    <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                        <span>📈</span> Tests by Category
+                    </h2>
+                    <div id="chart-by-category"></div>
+                </div>
+
+            </div>
+
+            <!-- Sprint Trend -->
+            <div class="chart-container mb-8">
+                <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                    <span>📉</span> Sprint Progress Timeline
+                </h2>
+                <div id="chart-by-sprint"></div>
+            </div>
+
+            <!-- Test Details Table -->
+            <div class="glass-card rounded-xl p-6">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                        <span>📋</span> Recent Test Results
+                    </h2>
+                    <input type="text" id="search-input" placeholder="Search tests..."
+                        class="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600">
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full" id="test-table">
+                        <thead class="bg-gray-50 border-b-2 border-gray-200">
+                            <tr>
+                                <th
+                                    class="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
+                                    Test Name</th>
+                                <th
+                                    class="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
+                                    Category</th>
+                                <th
+                                    class="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
+                                    Sprint</th>
+                                <th
+                                    class="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
+                                    Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="test-table-body" class="divide-y divide-gray-200">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Error Message -->
+        <div id="error-message" class="hidden glass-card rounded-xl p-6 bg-red-50 border-l-4 border-red-500">
+            <div class="flex items-start">
+                <span class="text-2xl mr-3">⚠️</span>
+                <div>
+                    <h3 class="font-bold text-red-800 mb-1">Error Loading Data</h3>
+                    <p class="text-red-700 text-sm" id="error-text"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="tooltip" class="tooltip"></div>
+
+    <script>
+        // Path to CSV file in same directory
+        const csvFilePath = './test_results_summary.csv';
+        const fetchUrl = csvFilePath;
+
+        const statusColors = {
+            'PASSED': '#10b981',
+            'FAILED': '#ef4444',
+            'SKIPPED': '#f59e0b',
+        };
+
+        const statusLabels = Object.keys(statusColors);
+        let allTestData = [];
+
+        async function fetchWithRetry(url, options = {}, maxRetries = 5) {
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    return response;
+                } catch (error) {
+                    if (i === maxRetries - 1) throw error;
+                    const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+        }
+
+        function updateLastUpdate() {
+            const now = new Date();
+            document.getElementById('last-update').textContent = now.toLocaleTimeString();
+        }
+
+        function updateSummaryStats(data) {
+            const statusCounts = d3.rollup(data, v => v.length, d => d.status);
+            const total = data.length;
+            const passed = statusCounts.get('PASSED') || 0;
+            const failed = statusCounts.get('FAILED') || 0;
+            const skipped = statusCounts.get('SKIPPED') || 0;
+            const passRate = total > 0 ? ((passed / total) * 100).toFixed(1) : 0;
+
+            document.getElementById('stat-passed').textContent = passed;
+            document.getElementById('stat-failed').textContent = failed;
+            document.getElementById('stat-skipped').textContent = skipped;
+            document.getElementById('stat-total').textContent = total;
+
+            document.getElementById('stat-passed-percent').textContent = total > 0 ? `${((passed / total) * 100).toFixed(1)}%` : '0%';
+            document.getElementById('stat-failed-percent').textContent = total > 0 ? `${((failed / total) * 100).toFixed(1)}%` : '0%';
+            document.getElementById('stat-skipped-percent').textContent = total > 0 ? `${((skipped / total) * 100).toFixed(1)}%` : '0%';
+            document.getElementById('pass-rate').textContent = `Pass Rate: ${passRate}%`;
+        }
+
+        function populateTestTable(data) {
+            const tbody = document.getElementById('test-table-body');
+            tbody.innerHTML = '';
+
+            data.slice(0, 50).forEach(test => {
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td class="px-4 py-3 text-sm font-medium text-gray-800">${test.testName}</td>
+                    <td class="px-4 py-3 text-sm text-gray-600">${test.category}</td>
+                    <td class="px-4 py-3 text-sm text-gray-600">${test.sprint}</td>
+                    <td class="px-4 py-3">
+                        <span class="px-3 py-1 text-xs font-bold rounded-full ${test.status === 'PASSED' ? 'bg-emerald-100 text-emerald-700' :
+                        test.status === 'FAILED' ? 'bg-red-100 text-red-700' :
+                            'bg-amber-100 text-amber-700'
+                    }">${test.status}</span>
+                    </td>
+                `;
+            });
+        }
+
+        function createLegend(containerId) {
+            const container = d3.select(containerId);
+            const legend = container.append("div")
+                .attr("class", "flex justify-center flex-wrap gap-4 mt-4");
+
+            statusLabels.forEach(status => {
+                const item = legend.append("div")
+                    .attr("class", "flex items-center text-sm font-semibold text-gray-700");
+
+                item.append("div")
+                    .attr("class", "w-4 h-4 rounded-full mr-2")
+                    .style("background-color", statusColors[status]);
+
+                item.append("span").text(status);
+            });
+        }
+
+        function drawDonutChart(data) {
+            const container = d3.select("#chart-status-donut");
+            const parentWidth = container.node().getBoundingClientRect().width;
+            const width = Math.min(parentWidth, 300);
+            const height = width;
+            const margin = 10;
+            const radius = Math.min(width, height) / 2 - margin;
+
+            container.html('');
+
+            const svg = container.append("svg")
+                .attr("viewBox", `0 0 ${width} ${height}`)
+                .append("g")
+                .attr("transform", `translate(${width / 2}, ${height / 2})`);
+
+            const pie = d3.pie().sort(null).value(d => d.count);
+            const arc = d3.arc().innerRadius(radius * 0.55).outerRadius(radius);
+            const totalTests = d3.sum(data, d => d.count);
+
+            const arcs = svg.selectAll(".arc")
+                .data(pie(data))
+                .enter().append("g").attr("class", "arc");
+
+            arcs.append("path")
+                .attr("d", arc)
+                .attr("fill", d => statusColors[d.data.status])
+                .attr("stroke", "white")
+                .style("stroke-width", "3px")
+                .style("cursor", "pointer")
+                .on("mouseover", function (event, d) {
+                    d3.select(this).style("opacity", 0.8);
+                    const tooltip = d3.select("#tooltip");
+                    tooltip.style("opacity", 1)
+                        .html(`<strong>${d.data.status}</strong><br/>${d.data.count} tests (${d3.format(".1%")(d.data.count / totalTests)})`)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 10) + "px");
+                })
+                .on("mouseout", function () {
+                    d3.select(this).style("opacity", 1);
+                    d3.select("#tooltip").style("opacity", 0);
+                });
+
+            svg.append("text")
+                .attr("text-anchor", "middle")
+                .attr("dominant-baseline", "central")
+                .attr("class", "text-3xl font-black")
+                .style("fill", "#1f2937")
+                .text(totalTests);
+
+            svg.append("text")
+                .attr("text-anchor", "middle")
+                .attr("y", 25)
+                .attr("class", "text-xs font-semibold")
+                .style("fill", "#6b7280")
+                .text("Total Tests");
+
+            createLegend("#chart-status-donut");
+        }
+
+        function drawGroupedBarChart(data, containerId, keyField) {
+            const container = d3.select(containerId);
+            const margin = { top: 20, right: 30, bottom: 80, left: 60 };
+
+            const categoryCount = data.length;
+            const minWidth = 600;
+            const dynamicWidth = Math.max(minWidth, categoryCount * 120);
+            const parentWidth = container.node().getBoundingClientRect().width;
+            const width = Math.min(parentWidth, dynamicWidth) - margin.left - margin.right;
+            const height = 350 - margin.top - margin.bottom;
+
+            container.html('');
+
+            const svg = container.append("svg")
+                .attr("viewBox", `0 0 ${width + margin.left + margin.right} ${height + margin.top + margin.bottom}`)
+                .attr("style", "max-width: 100%; height: auto;")
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            const keys = statusLabels;
+            const x0 = d3.scaleBand()
+                .domain(data.map(d => d[keyField]))
+                .rangeRound([0, width])
+                .paddingInner(0.15);
+
+            const x1 = d3.scaleBand()
+                .domain(keys)
+                .rangeRound([0, x0.bandwidth()])
+                .padding(0.1);
+
+            const y = d3.scaleLinear()
+                .domain([0, d3.max(data, d => d3.max(keys, key => d[key]))]).nice()
+                .rangeRound([height, 0]);
+
+            svg.append("g")
+                .attr("transform", `translate(0,${height})`)
+                .call(d3.axisBottom(x0).tickSizeOuter(0))
+                .selectAll("text")
+                .style("text-anchor", "end")
+                .attr("dx", "-.8em")
+                .attr("dy", ".15em")
+                .attr("transform", "rotate(-45)")
+                .style("font-size", "11px")
+                .style("font-weight", "600");
+
+            svg.append("g")
+                .call(d3.axisLeft(y).ticks(5))
+                .style("font-size", "11px")
+                .style("font-weight", "600");
+
+            const group = svg.append("g")
+                .selectAll("g")
+                .data(data)
+                .enter().append("g")
+                .attr("transform", d => `translate(${x0(d[keyField])},0)`);
+
+            group.selectAll("rect")
+                .data(d => keys.map(key => ({ key: key, value: d[key], group: d[keyField] })))
+                .enter().append("rect")
+                .attr("x", d => x1(d.key))
+                .attr("y", d => y(d.value))
+                .attr("width", x1.bandwidth())
+                .attr("height", d => height - y(d.value))
+                .attr("fill", d => statusColors[d.key])
+                .attr("rx", 4)
+                .style("cursor", "pointer")
+                .on("mouseover", function (event, d) {
+                    d3.select(this).style("opacity", 0.8);
+                    const tooltip = d3.select("#tooltip");
+                    tooltip.style("opacity", 1)
+                        .html(`<strong>${d.group}</strong><br/>${d.key}: ${d.value}`)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 10) + "px");
+                })
+                .on("mouseout", function () {
+                    d3.select(this).style("opacity", 1);
+                    d3.select("#tooltip").style("opacity", 0);
+                });
+
+            createLegend(containerId);
+        }
+
+        async function loadAndVisualizeData() {
+            try {
+                const response = await fetchWithRetry(fetchUrl);
+                const csvText = await response.text();
+
+                const data = d3.csvParse(csvText, d => ({
+                    testFile: d['Test File'],
+                    testName: d['Test Name'],
+                    status: d['Status'] ? d['Status'].trim().toUpperCase() : 'UNKNOWN',
+                    sprint: d['Sprint'] ? d['Sprint'].trim() : 'N/A',
+                    category: d['Category'] ? d['Category'].trim() : 'Uncategorized',
+                }));
+
+                if (data.length === 0) throw new Error("CSV file is empty or could not be parsed.");
+
+                allTestData = data;
+
+                const statusCounts = d3.rollup(data, v => v.length, d => d.status);
+                const donutData = Array.from(statusCounts, ([status, count]) => ({ status, count }));
+
+                const categoryGrouped = d3.rollup(data,
+                    v => d3.rollup(v, vv => vv.length, d => d.status),
+                    d => d.category
+                );
+                const categoryData = Array.from(categoryGrouped, ([category, statuses]) => {
+                    const obj = { category };
+                    statusLabels.forEach(s => obj[s] = statuses.get(s) || 0);
+                    return obj;
+                });
+
+                const sprintGrouped = d3.rollup(data,
+                    v => d3.rollup(v, vv => vv.length, d => d.status),
+                    d => d.sprint
+                );
+                const sprintData = Array.from(sprintGrouped, ([sprint, statuses]) => {
+                    const obj = { sprint };
+                    statusLabels.forEach(s => obj[s] = statuses.get(s) || 0);
+                    return obj;
+                });
+
+                sprintData.sort((a, b) => a.sprint.localeCompare(b.sprint, undefined, { numeric: true }));
+
+                d3.select("#loading-spinner").style("display", "none");
+                d3.select("#dashboard-content").style("display", "block");
+
+                updateSummaryStats(data);
+                populateTestTable(data);
+                drawDonutChart(donutData);
+                drawGroupedBarChart(categoryData, "#chart-by-category", 'category');
+                drawGroupedBarChart(sprintData, "#chart-by-sprint", 'sprint');
+                updateLastUpdate();
+
+                window.addEventListener('resize', () => {
+                    drawDonutChart(donutData);
+                    drawGroupedBarChart(categoryData, "#chart-by-category", 'category');
+                    drawGroupedBarChart(sprintData, "#chart-by-sprint", 'sprint');
+                });
+
+            } catch (error) {
+                console.error("Visualization error:", error);
+                d3.select("#loading-spinner").style("display", "none");
+                d3.select("#error-message").style("display", "block");
+                d3.select("#error-text").text(`${error.message}`);
+            }
+        }
+
+        document.getElementById('refresh-btn').addEventListener('click', () => {
+            document.getElementById('refresh-icon').classList.add('animate-spin');
+            loadAndVisualizeData().then(() => {
+                setTimeout(() => {
+                    document.getElementById('refresh-icon').classList.remove('animate-spin');
+                }, 1000);
+            });
+        });
+
+        document.getElementById('search-input').addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase();
+            const filtered = allTestData.filter(test =>
+                test.testName.toLowerCase().includes(searchTerm) ||
+                test.category.toLowerCase().includes(searchTerm) ||
+                test.sprint.toLowerCase().includes(searchTerm)
+            );
+            populateTestTable(filtered);
+        });
+
+        window.onload = loadAndVisualizeData;
+    </script>
+</body>
+
+</html>

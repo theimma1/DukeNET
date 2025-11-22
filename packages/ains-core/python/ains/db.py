@@ -52,6 +52,7 @@ class Agent(Base):
     tags = relationship("AgentTag", back_populates="agent")
     capabilities = relationship("Capability", back_populates="agent")
     trust_record = relationship("TrustRecord", back_populates="agent", uselist=False)
+    assigned_tasks = relationship("Task", back_populates="assigned_agent", foreign_keys="Task.assigned_agent_id")
 
 
 class AgentTag(Base):
@@ -133,6 +134,49 @@ class TrustRecord(Base):
     
     # Relationships
     agent = relationship("Agent", back_populates="trust_record")
+
+
+class Task(Base):
+    """AI Task Protocol (AITP) tasks"""
+    __tablename__ = "tasks"
+    
+    task_id = Column(String(64), primary_key=True)
+    client_id = Column(String(64), nullable=False)  # Identifier of the client submitting the task
+    
+    # Task type and metadata
+    task_type = Column(String(100), nullable=False)  # e.g., "text-generation", "image-analysis", "data-processing"
+    capability_required = Column(String(255), nullable=False)  # Required capability name
+    priority = Column(Integer, default=5)  # 1-10, higher = more urgent
+    
+    # Task data
+    input_data = Column(JSON, nullable=False)  # Task input parameters
+    task_metadata = Column(JSON)  # Additional metadata (tags, requirements, etc.)
+    
+    # Lifecycle status
+    status = Column(String(20), default='PENDING', nullable=False)  # PENDING, ASSIGNED, ACTIVE, COMPLETED, FAILED, CANCELLED
+    
+    # Assignment and execution
+    assigned_agent_id = Column(String(64), ForeignKey("agents.agent_id"))
+    assigned_at = Column(DateTime)
+    started_at = Column(DateTime)
+    completed_at = Column(DateTime)
+    
+    # Results
+    result_data = Column(JSON)  # Task output/result
+    error_message = Column(Text)  # Error details if failed
+    
+    # Retry and failure handling
+    retry_count = Column(Integer, default=0)
+    max_retries = Column(Integer, default=3)
+    timeout_seconds = Column(Integer, default=300)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
+    expires_at = Column(DateTime)  # Optional expiration time
+    
+    # Relationships
+    assigned_agent = relationship("Agent", back_populates="assigned_tasks", foreign_keys=[assigned_agent_id])
 
 
 def create_tables():

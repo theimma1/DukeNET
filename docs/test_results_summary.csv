@@ -1,0 +1,26 @@
+Test File,Test Name,Status,Sprint,Category
+test_api.py,test_health_check,PASSED,Sprint 2,API
+test_api.py,test_register_agent,PASSED,Sprint 2,API
+test_api.py,test_register_duplicate_agent,PASSED,Sprint 2,API
+test_api.py,test_get_agent,PASSED,Sprint 2,API
+test_api.py,test_get_nonexistent_agent,PASSED,Sprint 2,API
+test_api.py,test_list_agents,PASSED,Sprint 2,API
+test_api.py,test_list_agents_with_limit,PASSED,Sprint 2,API
+test_cache.py,test_cache_set_get_invalidate,PASSED,Sprint 2,Cache
+test_cache.py,test_cache_fallback,PASSED,Sprint 2,Cache
+test_capability.py,test_publish_and_list_capability,PASSED,Sprint 2,Capability
+test_db.py,test_agent_creation,PASSED,Sprint 2,Database
+test_db.py,test_agent_tag_relationship,PASSED,Sprint 2,Database
+test_db.py,test_trust_record_creation,PASSED,Sprint 2,Database
+test_heartbeat.py,test_heartbeat_endpoint,PASSED,Sprint 2,Heartbeat
+test_heartbeat.py,test_heartbeat_updates_timestamp,PASSED,Sprint 2,Heartbeat
+test_heartbeat.py,test_heartbeat_sets_agent_active,PASSED,Sprint 2,Heartbeat
+test_heartbeat.py,test_heartbeat_nonexistent_agent,PASSED,Sprint 2,Heartbeat
+test_heartbeat.py,test_multiple_heartbeats,PASSED,Sprint 2,Heartbeat
+test_heartbeat.py,test_heartbeat_with_metrics,PASSED,Sprint 2,Heartbeat
+test_heartbeat.py,test_heartbeat_degraded_status,PASSED,Sprint 2,Heartbeat
+test_heartbeat.py,test_stale_agents_detection,PASSED,Sprint 2,Heartbeat
+test_heartbeat.py,test_health_check_returns_timestamp,PASSED,Sprint 2,Heartbeat
+test_task_submit.py,test_submit_valid_task,PASSED,Sprint 3,Task Submit
+test_task_submit.py,test_submit_task_with_invalid_agent,PASSED,Sprint 3,Task Submit
+test_task_submit.py,test_submit_task_with_invalid_capability,PASSED,Sprint 3,Task Submit

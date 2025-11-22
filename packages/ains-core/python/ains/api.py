@@ -1,20 +1,30 @@
 """AINS FastAPI Application"""
-
+from typing import Optional, List
+from fastapi import Query
+import json
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, HTTPException, Depends, Query
-from pydantic import BaseModel
-from typing import Optional, List, Dict
+from pydantic import BaseModel, Field
+from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy import func, create_engine
+from sqlalchemy import func, create_engine, or_
 import sys
 import os
+import uuid
+import asyncio
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from .db import SessionLocal
+from .routing import route_pending_tasks
+
+
 
 # Add parent directory to path to import aicp if needed
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../../aicp-core/python'))
 
 from aicp import KeyPair  # Optional for signature/data management
-from .db import Agent, AgentTag, Capability, TrustRecord, get_db, create_tables
+from .db import Agent, AgentTag, Capability, TrustRecord, Task, get_db, create_tables
 from .cache import cache
 from .trust import calculate_trust_score, update_trust_score
 
@@ -67,27 +77,79 @@ class Heartbeat(BaseModel):
     metrics: Optional[dict] = None
 
 
+# Task-related models
+class TaskSubmission(BaseModel):
+    client_id: str = Field(..., description="Client identifier submitting the task")
+    task_type: str = Field(..., description="Type of AI task (e.g., 'text-generation', 'image-analysis')")
+    capability_required: str = Field(..., description="Required capability name")
+    input_data: Dict[str, Any] = Field(..., description="Task input parameters")
+    priority: Optional[int] = Field(5, ge=1, le=10, description="Task priority (1-10, higher = more urgent)")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
+    timeout_seconds: Optional[int] = Field(300, gt=0, description="Task timeout in seconds")
+    max_retries: Optional[int] = Field(3, ge=0, description="Maximum retry attempts")
+    expires_at: Optional[str] = Field(None, description="ISO format expiration timestamp")
+
+
+class TaskResponse(BaseModel):
+    task_id: str
+    client_id: str
+    task_type: str
+    capability_required: str
+    status: str
+    priority: int
+    assigned_agent_id: Optional[str] = None
+    created_at: str
+    updated_at: str
+    assigned_at: Optional[str] = None
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    result_data: Optional[Dict[str, Any]] = None
+    error_message: Optional[str] = None
+    retry_count: int
+
+
+class TaskUpdateStatus(BaseModel):
+    status: str = Field(..., description="New task status (ACTIVE, COMPLETED, FAILED)")
+    result_data: Optional[Dict[str, Any]] = Field(None, description="Task result data if completed")
+    error_message: Optional[str] = Field(None, description="Error message if failed")
+
+
 # Lifespan event handler (replaces @app.on_event)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup logic
-    create_tables()
+    """Lifespan event handler for startup and shutdown"""
+    # Startup
     print("✅ AINS API started - Database tables created")
     
-    # Start background task for monitoring agent health
-    import asyncio
-    task = asyncio.create_task(monitor_agent_health_loop())
+    # Start background task routing worker
+    routing_task = asyncio.create_task(task_routing_worker())
     
     yield
     
-    # Shutdown logic
-    try:
-        task.cancel()
-        await task
-    except asyncio.CancelledError:
-        pass
+    # Shutdown
+    routing_task.cancel()
     print("AINS API shutting down...")
 
+async def task_routing_worker():
+    """Background worker to route pending tasks"""
+    while True:
+        try:
+            db = SessionLocal()
+            try:
+                routed = route_pending_tasks(db, limit=10)
+                if routed > 0:
+                    print(f"✅ Routed {routed} tasks")
+            except Exception as e:
+                print(f"Error in task routing: {e}")
+            finally:
+                db.close()
+        except Exception as e:
+            print(f"Task routing worker error: {e}")
+        
+        # Wait 5 seconds before next routing cycle
+        await asyncio.sleep(5)
+
+# Make sure to use this lifespan in your FastAPI app
 
 app = FastAPI(title="AINS API", version="0.1.0", lifespan=lifespan)
 
@@ -110,10 +172,118 @@ async def monitor_agent_health_loop():
             session.commit()
             session.close()
         except asyncio.CancelledError:
-            # Task is being cancelled during shutdown
             break
         except Exception as e:
             print(f"Error in health monitoring: {e}")
+
+
+async def task_routing_loop():
+    """Background task to route pending tasks to suitable agents"""
+    import asyncio
+    while True:
+        try:
+            await asyncio.sleep(5)  # Run every 5 seconds
+            session = SessionLocal()
+            
+            # Get pending tasks
+            pending_tasks = session.query(Task).filter(
+                Task.status == 'PENDING',
+                or_(Task.expires_at.is_(None), Task.expires_at > datetime.now(timezone.utc))
+            ).order_by(Task.priority.desc(), Task.created_at.asc()).limit(10).all()
+            
+            for task in pending_tasks:
+                # Find suitable agent
+                agent = find_suitable_agent(session, task.capability_required)
+                
+                if agent:
+                    # Assign task to agent
+                    task.assigned_agent_id = agent.agent_id
+                    task.assigned_at = datetime.now(timezone.utc)
+                    task.status = 'ASSIGNED'
+                    task.updated_at = datetime.now(timezone.utc)
+                    print(f"Task {task.task_id} assigned to agent {agent.agent_id}")
+            
+            session.commit()
+            session.close()
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"Error in task routing: {e}")
+
+
+async def task_monitoring_loop():
+    """Background task to monitor task execution and handle timeouts/failures"""
+    import asyncio
+    while True:
+        try:
+            await asyncio.sleep(30)  # Run every 30 seconds
+            session = SessionLocal()
+            
+            # Check for expired tasks
+            now = datetime.now(timezone.utc)
+            expired_tasks = session.query(Task).filter(
+                Task.expires_at.isnot(None),
+                Task.expires_at < now,
+                Task.status.in_(['PENDING', 'ASSIGNED', 'ACTIVE'])
+            ).all()
+            
+            for task in expired_tasks:
+                task.status = 'FAILED'
+                task.error_message = 'Task expired'
+                task.updated_at = now
+                print(f"Task {task.task_id} marked as expired")
+            
+            # Check for timed out tasks
+            timeout_tasks = session.query(Task).filter(
+                Task.status == 'ACTIVE',
+                Task.started_at.isnot(None)
+            ).all()
+            
+            for task in timeout_tasks:
+                if task.started_at:
+                    elapsed = (now - task.started_at).total_seconds()
+                    if elapsed > task.timeout_seconds:
+                        # Handle timeout - retry or fail
+                        if task.retry_count < task.max_retries:
+                            task.status = 'PENDING'
+                            task.assigned_agent_id = None
+                            task.assigned_at = None
+                            task.started_at = None
+                            task.retry_count += 1
+                            task.updated_at = now
+                            print(f"Task {task.task_id} timed out, retrying (attempt {task.retry_count})")
+                        else:
+                            task.status = 'FAILED'
+                            task.error_message = f'Task timed out after {task.retry_count} retries'
+                            task.completed_at = now
+                            task.updated_at = now
+                            print(f"Task {task.task_id} failed after max retries")
+            
+            session.commit()
+            session.close()
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"Error in task monitoring: {e}")
+
+
+def find_suitable_agent(db: Session, capability_name: str) -> Optional[Agent]:
+    """
+    Find the most suitable agent for a given capability.
+    Uses trust score and capability matching.
+    """
+    # Find agents with the required capability
+    agents = db.query(Agent).join(Capability).filter(
+        func.lower(Capability.name) == capability_name.lower(),
+        Agent.status == 'ACTIVE',
+        Capability.deprecated == False
+    ).order_by(Agent.trust_score.desc()).limit(5).all()
+    
+    if not agents:
+        return None
+    
+    # Return agent with highest trust score
+    return agents[0]
 
 
 @app.get("/health")
@@ -362,3 +532,287 @@ def send_heartbeat(agent_id: str, heartbeat: Heartbeat, db: Session = Depends(ge
     cache.invalidate_agent(agent_id)
     db.commit()
     return {"acknowledged": True, "next_heartbeat_in": 300}
+
+
+# ========== TASK ENDPOINTS (AITP - AI Task Protocol) ==========
+
+@app.post("/aitp/tasks", response_model=TaskResponse)
+def submit_task(task_submission: TaskSubmission, db: Session = Depends(get_db)):
+    """
+    Submit a new AI task for execution.
+    Tasks are validated, queued, and automatically routed to suitable agents.
+    """
+    # Validate that the required capability exists
+    capability_exists = db.query(Capability).filter(
+        func.lower(Capability.name) == task_submission.capability_required.lower(),
+        Capability.deprecated == False
+    ).first()
+    
+    if not capability_exists:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No agents provide capability '{task_submission.capability_required}'"
+        )
+    
+    # Generate unique task ID
+    task_id = f"task_{uuid.uuid4().hex[:16]}"
+    
+    # Parse expiration timestamp if provided
+    expires_at = None
+    if task_submission.expires_at:
+        try:
+            expires_at = datetime.fromisoformat(task_submission.expires_at.replace('Z', '+00:00'))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid expires_at timestamp format")
+    
+    # Create task
+    new_task = Task(
+        task_id=task_id,
+        client_id=task_submission.client_id,
+        task_type=task_submission.task_type,
+        capability_required=task_submission.capability_required,
+        input_data=task_submission.input_data,
+        priority=task_submission.priority,
+        metadata=task_submission.metadata,
+        timeout_seconds=task_submission.timeout_seconds,
+        max_retries=task_submission.max_retries,
+        expires_at=expires_at,
+        status='PENDING',
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc)
+    )
+    
+    db.add(new_task)
+    db.commit()
+    db.refresh(new_task)
+    
+    return TaskResponse(
+        task_id=new_task.task_id,
+        client_id=new_task.client_id,
+        task_type=new_task.task_type,
+        capability_required=new_task.capability_required,
+        status=new_task.status,
+        priority=new_task.priority,
+        assigned_agent_id=new_task.assigned_agent_id,
+        created_at=new_task.created_at.isoformat(),
+        updated_at=new_task.updated_at.isoformat(),
+        assigned_at=new_task.assigned_at.isoformat() if new_task.assigned_at else None,
+        started_at=new_task.started_at.isoformat() if new_task.started_at else None,
+        completed_at=new_task.completed_at.isoformat() if new_task.completed_at else None,
+        result_data=new_task.result_data,
+        error_message=new_task.error_message,
+        retry_count=new_task.retry_count
+    )
+
+
+@app.get("/aitp/tasks/{task_id}", response_model=TaskResponse)
+def get_task(task_id: str, db: Session = Depends(get_db)):
+    """
+    Retrieve task status and results by task ID.
+    """
+    task = db.query(Task).filter(Task.task_id == task_id).first()
+    
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    return TaskResponse(
+        task_id=task.task_id,
+        client_id=task.client_id,
+        task_type=task.task_type,
+        capability_required=task.capability_required,
+        status=task.status,
+        priority=task.priority,
+        assigned_agent_id=task.assigned_agent_id,
+        created_at=task.created_at.isoformat(),
+        updated_at=task.updated_at.isoformat(),
+        assigned_at=task.assigned_at.isoformat() if task.assigned_at else None,
+        started_at=task.started_at.isoformat() if task.started_at else None,
+        completed_at=task.completed_at.isoformat() if task.completed_at else None,
+        result_data=task.result_data,
+        error_message=task.error_message,
+        retry_count=task.retry_count
+    )
+
+
+@app.get("/aitp/tasks")
+def list_tasks(
+    client_id: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    task_type: Optional[str] = Query(None),
+    assigned_agent_id: Optional[str] = Query(None),
+    limit: int = Query(20, gt=0, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db)
+):
+    """
+    List tasks with optional filtering.
+    """
+    query = db.query(Task)
+    
+    if client_id:
+        query = query.filter(Task.client_id == client_id)
+    if status:
+        query = query.filter(Task.status == status)
+    if task_type:
+        query = query.filter(Task.task_type == task_type)
+    if assigned_agent_id:
+        query = query.filter(Task.assigned_agent_id == assigned_agent_id)
+    
+    total = query.count()
+    tasks = query.order_by(Task.created_at.desc()).limit(limit).offset(offset).all()
+    
+    return {
+        "tasks": [
+            {
+                "task_id": task.task_id,
+                "client_id": task.client_id,
+                "task_type": task.task_type,
+                "status": task.status,
+                "priority": task.priority,
+                "assigned_agent_id": task.assigned_agent_id,
+                "created_at": task.created_at.isoformat(),
+                "updated_at": task.updated_at.isoformat()
+            }
+            for task in tasks
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset
+    }
+
+
+@app.put("/aitp/tasks/{task_id}/status")
+def update_task_status(
+    task_id: str,
+    agent_id: str,
+    status_update: TaskUpdateStatus,
+    db: Session = Depends(get_db)
+):
+    """
+    Update task status (used by agents to report progress/completion).
+    """
+    task = db.query(Task).filter(Task.task_id == task_id).first()
+    
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    # Verify the agent is assigned to this task
+    if task.assigned_agent_id != agent_id:
+        raise HTTPException(status_code=403, detail="Agent not assigned to this task")
+    
+    now = datetime.now(timezone.utc)
+    
+    # Update status based on the new status
+    if status_update.status == 'ACTIVE':
+        if task.status not in ['ASSIGNED']:
+            raise HTTPException(status_code=400, detail="Can only start ASSIGNED tasks")
+        task.status = 'ACTIVE'
+        task.started_at = now
+        
+    elif status_update.status == 'COMPLETED':
+        if task.status not in ['ACTIVE']:
+            raise HTTPException(status_code=400, detail="Can only complete ACTIVE tasks")
+        task.status = 'COMPLETED'
+        task.completed_at = now
+        task.result_data = status_update.result_data
+        
+        # Update agent trust score on successful completion
+        agent = db.query(Agent).filter(Agent.agent_id == agent_id).first()
+        if agent and agent.trust_record:
+            agent.trust_record.successful_transactions += 1
+            # Recalculate trust score (simple increment for now)
+            if agent.trust_score < 100:
+                agent.trust_score = min(100.0, float(agent.trust_score) + 0.5)
+        
+    elif status_update.status == 'FAILED':
+        if task.status not in ['ACTIVE', 'ASSIGNED']:
+            raise HTTPException(status_code=400, detail="Invalid status transition to FAILED")
+        
+        # Check if we should retry
+        if task.retry_count < task.max_retries:
+            task.status = 'PENDING'
+            task.assigned_agent_id = None
+            task.assigned_at = None
+            task.started_at = None
+            task.retry_count += 1
+            task.error_message = status_update.error_message
+        else:
+            task.status = 'FAILED'
+            task.completed_at = now
+            task.error_message = status_update.error_message
+            
+            # Update agent trust score on failure
+            agent = db.query(Agent).filter(Agent.agent_id == agent_id).first()
+            if agent and agent.trust_record:
+                agent.trust_record.failed_transactions += 1
+                # Decrease trust score
+                if agent.trust_score > 0:
+                    agent.trust_score = max(0.0, float(agent.trust_score) - 1.0)
+    else:
+        raise HTTPException(status_code=400, detail=f"Invalid status: {status_update.status}")
+    
+    task.updated_at = now
+    db.commit()
+    db.refresh(task)
+    
+    return {
+        "task_id": task.task_id,
+        "status": task.status,
+        "retry_count": task.retry_count,
+        "updated_at": task.updated_at.isoformat()
+    }
+
+
+@app.delete("/aitp/tasks/{task_id}")
+def cancel_task(task_id: str, client_id: str, db: Session = Depends(get_db)):
+    """
+    Cancel a pending or assigned task.
+    """
+    task = db.query(Task).filter(Task.task_id == task_id).first()
+    
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    # Verify client owns this task
+    if task.client_id != client_id:
+        raise HTTPException(status_code=403, detail="Not authorized to cancel this task")
+    
+    if task.status not in ['PENDING', 'ASSIGNED']:
+        raise HTTPException(status_code=400, detail="Can only cancel PENDING or ASSIGNED tasks")
+    
+    task.status = 'CANCELLED'
+    task.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    
+    return {"task_id": task.task_id, "status": "CANCELLED"}
+
+@app.get("/health/aitp")
+async def aitp_health_check(db: Session = Depends(get_db)):
+    """AITP health check with task queue metrics"""
+    from sqlalchemy import func
+    
+    # Get task counts by status
+    status_counts = db.query(
+        Task.status,
+        func.count(Task.task_id).label('count')
+    ).group_by(Task.status).all()
+    
+    status_summary = {status: count for status, count in status_counts}
+    
+    # Calculate failure rate
+    total_completed = status_summary.get('COMPLETED', 0) + status_summary.get('FAILED', 0)
+    failure_rate = (status_summary.get('FAILED', 0) / total_completed * 100) if total_completed > 0 else 0
+    
+    return {
+        "status": "healthy",
+        "service": "AITP",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "metrics": {
+            "queue_depth": status_summary.get('PENDING', 0),
+            "active_tasks": status_summary.get('ACTIVE', 0),
+            "assigned_tasks": status_summary.get('ASSIGNED', 0),
+            "completed_tasks": status_summary.get('COMPLETED', 0),
+            "failed_tasks": status_summary.get('FAILED', 0),
+            "failure_rate_percent": round(failure_rate, 2)
+        }
+    }
