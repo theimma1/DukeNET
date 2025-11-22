@@ -20,6 +20,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from .db import SessionLocal
 from .routing import route_pending_tasks
+from .queue import PriorityQueue, adjust_priority_by_age
+
 
 
 
@@ -916,4 +918,66 @@ async def manually_retry_task(task_id: str, db: Session = Depends(get_db)):
         "status": "PENDING",
         "retry_count": task.retry_count,
         "next_retry_at": task.next_retry_at
+    }
+
+@app.get("/aitp/queue/stats")
+def get_queue_stats(db: Session = Depends(get_db)):
+    """
+    Get queue statistics by priority level.
+    
+    Returns queue depth, priority distribution, and workload balance.
+    """
+    queue = PriorityQueue(db)
+    
+    stats = queue.get_queue_stats()
+    workload = queue.balance_workload()
+    
+    return {
+        "queue": stats,
+        "workload": workload,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+
+
+@app.put("/aitp/tasks/{task_id}/priority")
+def adjust_task_priority(
+    task_id: str,
+    new_priority: int = Query(..., ge=1, le=10),
+    client_id: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Adjust task priority.
+    
+    Only the task creator can adjust priority.
+    Priority must be between 1-10 (10=highest).
+    """
+    task = db.query(Task).filter(Task.task_id == task_id).first()
+    
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    # Verify client owns this task
+    if task.client_id != client_id:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this task")
+    
+    # Can only adjust priority of pending/assigned tasks
+    if task.status not in ['PENDING', 'ASSIGNED']:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot adjust priority of {task.status} task"
+        )
+    
+    old_priority = task.priority
+    task.priority = new_priority
+    task.updated_at = datetime.now(timezone.utc)
+    
+    db.commit()
+    db.refresh(task)
+    
+    return {
+        "task_id": task_id,
+        "old_priority": old_priority,
+        "new_priority": new_priority,
+        "status": task.status
     }
