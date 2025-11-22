@@ -1,4 +1,5 @@
 """AINS FastAPI Application"""
+from .performance import get_system_stats, get_database_size, cleanup_old_data
 from .webhooks import register_webhook, trigger_webhook_event, get_webhook_deliveries
 from .db import Webhook, WebhookDelivery
 from .batch import submit_batch_tasks, get_batch_status, cancel_batch_tasks
@@ -1307,3 +1308,35 @@ def get_webhook_deliveries_endpoint(
             for d in deliveries
         ]
     }
+
+@app.get("/ains/stats")
+def get_stats_endpoint(db: Session = Depends(get_db)):
+    """
+    Get system-wide performance statistics.
+    
+    Returns metrics on tasks, agents, throughput, and performance.
+    """
+    stats = get_system_stats(db)
+    return stats
+
+
+@app.get("/ains/stats/database")
+def get_database_stats_endpoint(db: Session = Depends(get_db)):
+    """Get database size and table information"""
+    stats = get_database_size(db)
+    return stats
+
+
+@app.post("/ains/maintenance/cleanup")
+def cleanup_old_data_endpoint(
+    days: int = Query(30, ge=7, le=365),
+    db: Session = Depends(get_db)
+):
+    """
+    Clean up old completed/failed tasks and deliveries.
+    
+    Deletes data older than specified days (default: 30 days).
+    Minimum: 7 days, Maximum: 365 days.
+    """
+    result = cleanup_old_data(db, days)
+    return result
