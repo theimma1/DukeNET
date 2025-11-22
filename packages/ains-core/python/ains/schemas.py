@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 
 class TaskCreate(BaseModel):
@@ -10,14 +10,12 @@ class TaskCreate(BaseModel):
     input_data: Dict[str, Any]
     priority: int = Field(5, ge=0, le=10)
 
-    @validator("input_data")
-    def validate_payload_size(cls, v):
-        import json
-        size = len(json.dumps(v))
-        if size > 10_000:
-            raise ValueError(f"input_data too large ({size} bytes), max 10KB allowed")
+    @field_validator("input_data")
+    @classmethod
+    def validate_input_data(cls, v):
+        if not isinstance(v, dict):
+            raise ValueError("input_data must be a dictionary")
         return v
-
 
 class TaskState(str):
     PENDING = "PENDING"
@@ -65,6 +63,14 @@ class TaskSubmission(BaseModel):
     retry_policy: str = Field(default="exponential")  # ← ADD THIS LINE
     expires_at: Optional[str] = None
 
+    # Replace @validator with @field_validator
+    @field_validator("input_data")
+    @classmethod
+    def validate_input_data(cls, v):
+        if not isinstance(v, dict):
+            raise ValueError("input_data must be a dictionary")
+        return v
+
 class TaskResponse(BaseModel):
     """Schema for task response"""
     task_id: str
@@ -83,5 +89,5 @@ class TaskResponse(BaseModel):
     error_message: Optional[str] = None
     retry_count: int = 0
     
-    class Config:
-        from_attributes = True  # For Pydantic V2 (was orm_mode in V1)
+    # Replace class Config with ConfigDict
+    model_config = ConfigDict(from_attributes=True)
