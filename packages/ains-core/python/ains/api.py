@@ -1,4 +1,5 @@
 """AINS FastAPI Application"""
+from .batch import submit_batch_tasks, get_batch_status, cancel_batch_tasks
 from .timeouts import cancel_task, set_task_timeout, check_timeouts
 import uuid
 from .schemas import TaskSubmission, TaskResponse
@@ -1092,3 +1093,100 @@ def check_timeouts_endpoint(db: Session = Depends(get_db)):
         "timed_out_count": timed_out,
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
+
+class BatchTaskSpec(BaseModel):
+    """Specification for a single task in a batch"""
+    task_type: str
+    capability_required: str
+    input_data: Dict[str, Any]
+    priority: int = Field(default=5, ge=1, le=10)
+    max_retries: int = Field(default=3, ge=0, le=10)
+    retry_policy: str = Field(default="exponential")
+    timeout_seconds: int = Field(default=300)
+
+
+class BatchTaskSubmission(BaseModel):
+    """Batch task submission request"""
+    client_id: str
+    tasks: List[BatchTaskSpec]
+
+
+@app.post("/aitp/tasks/batch")
+def submit_batch_tasks_endpoint(
+    batch: BatchTaskSubmission,
+    db: Session = Depends(get_db)
+):
+    """
+    Submit multiple tasks in a single batch.
+    
+    Maximum 1000 tasks per batch.
+    All tasks are committed atomically.
+    """
+    if len(batch.tasks) > 1000:
+        raise HTTPException(
+            status_code=400,
+            detail="Maximum 1000 tasks per batch"
+        )
+    
+    if len(batch.tasks) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Batch must contain at least one task"
+        )
+    
+    # Convert to dict format
+    tasks_dict = [task.model_dump() for task in batch.tasks]
+
+    
+    result = submit_batch_tasks(db, batch.client_id, tasks_dict)
+    
+    return result
+
+
+@app.get("/aitp/tasks/batch/status")
+def get_batch_status_endpoint(
+    task_ids: str = Query(..., description="Comma-separated task IDs"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get status of multiple tasks.
+    
+    Pass task IDs as comma-separated string.
+    Example: ?task_ids=task_123,task_456,task_789
+    """
+    task_id_list = [tid.strip() for tid in task_ids.split(',')]
+    
+    if len(task_id_list) > 1000:
+        raise HTTPException(
+            status_code=400,
+            detail="Maximum 1000 tasks per request"
+        )
+    
+    result = get_batch_status(db, task_id_list)
+    
+    return result
+
+
+@app.post("/aitp/tasks/batch/cancel")  # ← Use POST instead of DELETE for batch operations
+def cancel_batch_tasks_endpoint(
+    task_ids: str = Query(..., description="Comma-separated task IDs"),
+    client_id: str = Query(...),
+    reason: str = Query("Batch cancellation"),
+    db: Session = Depends(get_db)
+):
+    """
+    Cancel multiple tasks in a batch.
+    
+    Pass task IDs as comma-separated string.
+    """
+    task_id_list = [tid.strip() for tid in task_ids.split(',')]
+    
+    if len(task_id_list) > 1000:
+        raise HTTPException(
+            status_code=400,
+            detail="Maximum 1000 tasks per request"
+        )
+    
+    result = cancel_batch_tasks(db, task_id_list, client_id, reason)
+    
+    return result
