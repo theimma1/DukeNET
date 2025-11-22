@@ -142,7 +142,9 @@ class Task(Base):
     
     task_id = Column(String(64), primary_key=True)
     client_id = Column(String(64), nullable=False)  # Identifier of the client submitting the task
-    
+    priority = Column(Integer, default=5)  # Should already exist from Sprint 3
+    # Priority range: 1-10, where 10 is highest priority
+
     # Task type and metadata
     task_type = Column(String(100), nullable=False)  # e.g., "text-generation", "image-analysis", "data-processing"
     capability_required = Column(String(255), nullable=False)  # Required capability name
@@ -176,6 +178,12 @@ class Task(Base):
     created_at = Column(DateTime, default=utc_now)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
     expires_at = Column(DateTime)  # Optional expiration time
+
+    # Timeout and cancellation fields (ADD THESE)
+    timeout_seconds = Column(Integer, nullable=True)
+    cancelled_at = Column(DateTime(timezone=True), nullable=True)
+    cancelled_by = Column(String, nullable=True)
+    cancellation_reason = Column(String, nullable=True)
     
     # Relationships
     assigned_agent = relationship("Agent", back_populates="assigned_tasks", foreign_keys=[assigned_agent_id])

@@ -1,4 +1,5 @@
 """AINS FastAPI Application"""
+from .timeouts import cancel_task, set_task_timeout, check_timeouts
 import uuid
 from .schemas import TaskSubmission, TaskResponse
 from .schemas import TaskSubmission as TaskSubmit
@@ -831,9 +832,17 @@ def update_task_status(
 
 
 @app.delete("/aitp/tasks/{task_id}")
-def cancel_task(task_id: str, client_id: str, db: Session = Depends(get_db)):
+def cancel_task_endpoint(
+    task_id: str,
+    client_id: str = Query(...),
+    reason: str = Query("Cancelled by client"),
+    db: Session = Depends(get_db)
+):
     """
-    Cancel a pending or assigned task.
+    Cancel a task.
+    
+    Only the task creator can cancel their tasks.
+    Tasks can only be cancelled if not already completed/failed.
     """
     task = db.query(Task).filter(Task.task_id == task_id).first()
     
@@ -844,14 +853,26 @@ def cancel_task(task_id: str, client_id: str, db: Session = Depends(get_db)):
     if task.client_id != client_id:
         raise HTTPException(status_code=403, detail="Not authorized to cancel this task")
     
-    if task.status not in ['PENDING', 'ASSIGNED']:
-        raise HTTPException(status_code=400, detail="Can only cancel PENDING or ASSIGNED tasks")
+    # Attempt cancellation using the imported function
+    from .timeouts import cancel_task
+    success = cancel_task(db, task_id, client_id, reason)
     
-    task.status = 'CANCELLED'
-    task.updated_at = datetime.now(timezone.utc)
-    db.commit()
+    if not success:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot cancel task in {task.status} status"
+        )
     
-    return {"task_id": task.task_id, "status": "CANCELLED"}
+    # Refresh to get updated values
+    db.refresh(task)
+    
+    return {
+        "task_id": task_id,
+        "status": "CANCELLED",
+        "cancelled_at": task.cancelled_at.isoformat() if task.cancelled_at else None,
+        "reason": reason
+    }
+
 
 @app.get("/health/aitp")
 async def aitp_health_check(db: Session = Depends(get_db)):
@@ -980,4 +1001,94 @@ def adjust_task_priority(
         "old_priority": old_priority,
         "new_priority": new_priority,
         "status": task.status
+    }
+@app.delete("/aitp/tasks/{task_id}")
+def cancel_task_endpoint(
+    task_id: str,
+    client_id: str = Query(...),
+    reason: str = Query("Cancelled by client"),
+    db: Session = Depends(get_db)
+):
+    """Cancel a task"""
+    task = db.query(Task).filter(Task.task_id == task_id).first()
+    
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    # Verify client owns this task
+    if task.client_id != client_id:
+        raise HTTPException(status_code=403, detail="Not authorized to cancel this task")
+    
+    # Attempt cancellation
+    success = cancel_task(db, task_id, client_id, reason)
+    
+    if not success:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot cancel task in {task.status} status"
+        )
+    
+    # Refresh to get updated values
+    db.refresh(task)
+    
+    return {
+        "task_id": task_id,
+        "status": "CANCELLED",
+        "cancelled_at": task.cancelled_at.isoformat() if task.cancelled_at else None,  # ← ADD THIS
+        "reason": reason
+    }
+
+
+
+@app.put("/aitp/tasks/{task_id}/timeout")
+def set_timeout_endpoint(
+    task_id: str,
+    timeout_seconds: int = Query(..., gt=0, le=86400),  # Max 24 hours
+    client_id: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Set or update task timeout.
+    
+    Only the task creator can set timeouts.
+    Timeout must be between 1 second and 24 hours.
+    """
+    task = db.query(Task).filter(Task.task_id == task_id).first()
+    
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    # Verify client owns this task
+    if task.client_id != client_id:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this task")
+    
+    # Set timeout
+    success = set_task_timeout(db, task_id, timeout_seconds)
+    
+    if not success:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot set timeout on {task.status} task"
+        )
+    
+    return {
+        "task_id": task_id,
+        "timeout_seconds": timeout_seconds,
+        "status": task.status
+    }
+
+
+@app.post("/aitp/maintenance/check-timeouts")
+def check_timeouts_endpoint(db: Session = Depends(get_db)):
+    """
+    Manually trigger timeout check.
+    
+    In production, this would run as a background worker.
+    For testing/debugging, can be triggered manually.
+    """
+    timed_out = check_timeouts(db, limit=100)
+    
+    return {
+        "timed_out_count": timed_out,
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
