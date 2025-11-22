@@ -1,4 +1,6 @@
 """AINS FastAPI Application"""
+from .webhooks import register_webhook, trigger_webhook_event, get_webhook_deliveries
+from .db import Webhook, WebhookDelivery
 from .batch import submit_batch_tasks, get_batch_status, cancel_batch_tasks
 from .timeouts import cancel_task, set_task_timeout, check_timeouts
 import uuid
@@ -1190,3 +1192,118 @@ def cancel_batch_tasks_endpoint(
     result = cancel_batch_tasks(db, task_id_list, client_id, reason)
     
     return result
+
+class WebhookRegistration(BaseModel):
+    """Webhook registration request"""
+    agent_id: str
+    url: str
+    events: List[str]
+    secret: Optional[str] = None
+
+
+@app.post("/ains/webhooks")
+def register_webhook_endpoint(
+    webhook: WebhookRegistration,
+    db: Session = Depends(get_db)
+):
+    """
+    Register a webhook for event notifications.
+    
+    Events:
+    - task.created
+    - task.assigned
+    - task.started
+    - task.completed
+    - task.failed
+    - task.cancelled
+    """
+    result = register_webhook(
+        db,
+        webhook.agent_id,
+        webhook.url,
+        webhook.events,
+        webhook.secret
+    )
+    
+    return {
+        "webhook_id": result.webhook_id,
+        "agent_id": result.agent_id,
+        "url": result.url,
+        "events": json.loads(result.events),
+        "active": result.active,
+        "created_at": result.created_at.isoformat()
+    }
+
+
+@app.get("/ains/webhooks/{webhook_id}")
+def get_webhook_endpoint(
+    webhook_id: str,
+    db: Session = Depends(get_db)
+):
+    """Get webhook details"""
+    webhook = db.query(Webhook).filter(
+        Webhook.webhook_id == webhook_id
+    ).first()
+    
+    if not webhook:
+        raise HTTPException(status_code=404, detail="Webhook not found")
+    
+    return {
+        "webhook_id": webhook.webhook_id,
+        "agent_id": webhook.agent_id,
+        "url": webhook.url,
+        "events": json.loads(webhook.events),
+        "active": webhook.active,
+        "created_at": webhook.created_at.isoformat(),
+        "updated_at": webhook.updated_at.isoformat()
+    }
+
+
+@app.delete("/ains/webhooks/{webhook_id}")
+def delete_webhook_endpoint(
+    webhook_id: str,
+    agent_id: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    """Delete/deactivate a webhook"""
+    webhook = db.query(Webhook).filter(
+        Webhook.webhook_id == webhook_id
+    ).first()
+    
+    if not webhook:
+        raise HTTPException(status_code=404, detail="Webhook not found")
+    
+    if webhook.agent_id != agent_id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    webhook.active = False
+    webhook.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    
+    return {"webhook_id": webhook_id, "status": "deactivated"}
+
+
+@app.get("/ains/webhooks/{webhook_id}/deliveries")
+def get_webhook_deliveries_endpoint(
+    webhook_id: str,
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db)
+):
+    """Get webhook delivery history"""
+    deliveries = get_webhook_deliveries(db, webhook_id, limit)
+    
+    return {
+        "webhook_id": webhook_id,
+        "deliveries": [
+            {
+                "delivery_id": d.delivery_id,
+                "event_type": d.event_type,
+                "status": d.status,
+                "attempt_count": d.attempt_count,
+                "response_code": d.response_code,
+                "created_at": d.created_at.isoformat(),
+                "delivered_at": d.delivered_at.isoformat() if d.delivered_at else None
+            }
+            for d in deliveries
+        ]
+    }

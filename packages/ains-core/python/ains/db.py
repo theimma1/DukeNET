@@ -201,3 +201,32 @@ def get_db():
         yield db
     finally:
         db.close()
+
+# Add to ains/db.py after the Task model
+
+class Webhook(Base):
+    __tablename__ = "webhooks"
+    
+    webhook_id = Column(String, primary_key=True)
+    agent_id = Column(String, nullable=False)
+    url = Column(String, nullable=False)
+    events = Column(String, nullable=False)  # JSON array
+    secret = Column(String, nullable=True)
+    active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    updated_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class WebhookDelivery(Base):
+    __tablename__ = "webhook_deliveries"
+    
+    delivery_id = Column(String, primary_key=True)
+    webhook_id = Column(String, nullable=False)
+    event_type = Column(String, nullable=False)
+    payload = Column(String, nullable=False)  # JSON
+    status = Column(String, nullable=False)  # pending, success, failed
+    response_code = Column(Integer, nullable=True)
+    response_body = Column(String, nullable=True)
+    attempt_count = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    delivered_at = Column(DateTime(timezone=True), nullable=True)
