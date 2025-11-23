@@ -46,3 +46,5 @@ packages/duke-agent/training/data/*
 AINET.html
 dukenet_architecture.html
 todo-list.html
+*.db
+*.sqlite
