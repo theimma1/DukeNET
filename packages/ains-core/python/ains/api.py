@@ -45,7 +45,9 @@ from .advanced_features import (
 )
 from .db import TaskChain, ScheduledTask, TaskTemplate
 
-
+from fastapi.responses import Response as FastAPIResponse
+from ains.observability.metrics import get_metrics, initialize_app_info
+from ains.observability.middleware import PrometheusMiddleware
 
 # Add parent directory to path to import aicp if needed
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../../aicp-core/python'))
@@ -167,6 +169,32 @@ async def task_routing_worker():
 
 app = FastAPI(title="AINS API", version="0.1.0", lifespan=lifespan)
 
+# Initialize metrics with app info
+initialize_app_info(version="1.0.0", environment="development")
+
+# Add Prometheus middleware
+app.add_middleware(PrometheusMiddleware)
+
+# Add metrics endpoint
+@app.get("/metrics", include_in_schema=False)
+async def metrics():
+    """
+    Prometheus metrics endpoint
+    Returns metrics in Prometheus exposition format
+    """
+    return FastAPIResponse(
+        content=get_metrics(),
+        media_type="text/plain; version=0.0.4"
+    )
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {
+        "status": "healthy",
+        "service": "DukeNet-AINS",
+        "version": "1.0.0"
+    }
 
 async def monitor_agent_health_loop():
     """Background task to monitor agent health"""
