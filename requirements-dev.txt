@@ -1,0 +1,12 @@
+# Development dependencies
+-r requirements.txt
+
+# Additional dev tools
+ipython==8.18.1
+ipdb==0.13.13
+pytest-watch==4.2.0
+coverage[toml]==7.3.4
+
+# Documentation
+mkdocs==1.5.3
+mkdocs-material==9.5.3
