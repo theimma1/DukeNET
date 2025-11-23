@@ -48,6 +48,7 @@ from .db import TaskChain, ScheduledTask, TaskTemplate
 from fastapi.responses import Response as FastAPIResponse
 from ains.observability.metrics import get_metrics, initialize_app_info
 from ains.observability.middleware import PrometheusMiddleware
+from ains.observability.metrics import record_task_created, update_queue_depth
 
 # Add parent directory to path to import aicp if needed
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../../aicp-core/python'))
@@ -379,6 +380,23 @@ def register_agent(registration: AgentRegistration, db: Session = Depends(get_db
     }
     cache.set_agent(new_agent.agent_id, agent_data)
 
+    # ========== METRICS: Track agent registration ==========
+    from ains.observability.metrics import agents_total, agents_active, update_agent_metrics
+    
+    # Update agent counts
+    total_agents = db.query(Agent).count()
+    active_agents = db.query(Agent).filter(Agent.status == "AVAILABLE").count()
+    agents_total.set(total_agents)
+    agents_active.set(active_agents)
+    
+    # Update individual agent trust score
+    update_agent_metrics(
+        agent_id=new_agent.agent_id,
+        display_name=new_agent.display_name,
+        trust_score=float(new_agent.trust_score)
+    )
+    # =======================================================
+
     return AgentResponse(
         agent_id=new_agent.agent_id,
         public_key=new_agent.public_key,
@@ -388,7 +406,9 @@ def register_agent(registration: AgentRegistration, db: Session = Depends(get_db
         trust_score=float(new_agent.trust_score),
         tags=new_agent.tags or []
     )
+# ========== AGENT ENDPOINTS ==========
 
+    
 
 # Trust & Reputation endpoints - ADD THESE BEFORE PARAMETERIZED ROUTES
 
@@ -616,13 +636,15 @@ def search_agents(
             "capabilities": caps,
         })
 
+        
+    
     return {
         "results": results,
         "total": total,
         "limit": limit,
         "offset": offset
     }
-
+    
 
 @app.post("/ains/agents/{agent_id}/heartbeat")
 def send_heartbeat(agent_id: str, heartbeat: Heartbeat, db: Session = Depends(get_db)):
@@ -637,7 +659,24 @@ def send_heartbeat(agent_id: str, heartbeat: Heartbeat, db: Session = Depends(ge
 
     cache.invalidate_agent(agent_id)
     db.commit()
+    
+    # ========== METRICS: Track agent heartbeat ==========
+    from ains.observability.metrics import agents_active, update_agent_metrics
+    
+    # Update active agents count
+    active_agents = db.query(Agent).filter(Agent.status == "AVAILABLE").count()
+    agents_active.set(active_agents)
+    
+    # Update agent trust score (in case it changed)
+    update_agent_metrics(
+        agent_id=agent.agent_id,
+        display_name=agent.display_name,
+        trust_score=float(agent.trust_score)
+    )
+    # ====================================================
+    
     return {"acknowledged": True, "next_heartbeat_in": 300}
+
 
 
 # ========== TASK ENDPOINTS (AITP - AI Task Protocol) ==========
@@ -691,10 +730,23 @@ def create_task(
         routing_strategy=task_data.get("routing_strategy", "round_robin"),
         status="PENDING"
     )
-    
+        
     db.add(task)
     db.commit()
     db.refresh(task)
+
+    # ========== METRICS: Track task creation ==========
+    from ains.observability.metrics import record_task_created, update_queue_depth
+    record_task_created(
+        task_type=task.task_type,
+        client_id=task.client_id,
+        priority=task.priority
+    )
+    
+    # Update queue depth
+    pending_count = db.query(Task).filter(Task.status == "PENDING").count()
+    update_queue_depth(priority=task.priority, count=pending_count)
+    # ===============================================
     
     # If not blocked, attempt to route the task
     if not is_blocked:
@@ -715,6 +767,8 @@ def create_task(
         "assigned_agent_id": task.assigned_agent_id,
         "created_at": task.created_at.isoformat()
     }
+
+
 
 
 @app.post("/aitp/tasks", response_model=TaskResponse)
@@ -775,6 +829,20 @@ def submit_task(task_submission: TaskSubmission, db: Session = Depends(get_db)):
     db.add(new_task)
     db.commit()
     db.refresh(new_task)
+
+    # ========== METRICS: Track task creation ==========
+    from ains.observability.metrics import record_task_created, update_queue_depth
+    record_task_created(
+        task_type=new_task.task_type,
+        client_id=new_task.client_id,
+        priority=new_task.priority
+    )
+    
+    # Update queue depth
+    pending_count = db.query(Task).filter(Task.status == "PENDING").count()
+    update_queue_depth(priority=new_task.priority, count=pending_count)
+    # ==================================================
+
     
     # Return the created task as TaskResponse
     return TaskResponse(
@@ -917,6 +985,38 @@ def update_task_status(
     task.updated_at = now
     db.commit()
     db.refresh(task)
+    
+    # ========== METRICS: Track task completion/failure ==========
+    from ains.observability.metrics import record_task_completed, record_task_failed, record_task_retry
+    
+    # Calculate duration if task is completed or failed
+    if task.status in ["COMPLETED", "FAILED"]:
+        if task.started_at:
+            duration = (now - task.started_at).total_seconds()
+        else:
+            duration = 0
+        
+        if task.status == "COMPLETED":
+            record_task_completed(
+                task_type=task.task_type,
+                agent_id=agent_id,
+                duration_seconds=duration
+            )
+        elif task.status == "FAILED":
+            record_task_failed(
+                task_type=task.task_type,
+                agent_id=agent_id,
+                failure_reason=task.error_message[:50] if task.error_message else "unknown",
+                duration_seconds=duration
+            )
+    
+    # Track retry if task was retried
+    if status_update.status == 'FAILED' and task.retry_count > 0 and task.status == 'PENDING':
+        record_task_retry(
+            task_type=task.task_type,
+            retry_count=task.retry_count
+        )
+    # ============================================================
     
     return {
         "task_id": task.task_id,
