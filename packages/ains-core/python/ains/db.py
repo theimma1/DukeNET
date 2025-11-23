@@ -1,12 +1,19 @@
 """AINS Database Models"""
 import os
 from datetime import datetime, timezone
+import secrets
+from datetime import datetime, timezone, timedelta
+from typing import Optional
+
+from sqlalchemy import Column, String, Boolean, DateTime, Integer, ForeignKey, Index
+
+from sqlalchemy import (
+    create_engine, Column, String, DateTime, Integer, Boolean, 
+    DECIMAL, Text, ForeignKey, JSON, Float, Index, func
+)
+from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./ains.db")
-
-from sqlalchemy import create_engine, Column, String, DateTime, Integer, Boolean, DECIMAL, Text, ForeignKey, JSON
-from sqlalchemy.orm import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship
 
 Base = declarative_base()
 
@@ -24,36 +31,42 @@ else:
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-
 # Helper function for timezone-aware datetime defaults
 def utc_now():
     """Return current UTC time with timezone awareness"""
     return datetime.now(timezone.utc)
 
-
 class Agent(Base):
-    """Agent registry table"""
+    """Registered agents"""
     __tablename__ = "agents"
     
-    agent_id = Column(String(64), primary_key=True)
-    public_key = Column(Text, nullable=False, unique=True)
-    display_name = Column(String(255))
-    description = Column(Text)
-    endpoint_url = Column(String(255))
-    status = Column(String(20), default='ACTIVE')
-    created_at = Column(DateTime, default=utc_now)
-    last_heartbeat = Column(DateTime)
-    owner_address = Column(String(42))
-    avatar_url = Column(String(255))
-    trust_score = Column(DECIMAL(5,2), default=50.0)
-    version = Column(String(20))
+    id = Column(Integer, primary_key=True, index=True)
+    agent_id = Column(String(64), unique=True, nullable=False, index=True)
+    display_name = Column(String(255), nullable=False)
+    public_key = Column(String, nullable=False)
+    endpoint = Column(String(512), nullable=False)
+    signature = Column(String, nullable=False)
+    tags = Column(JSON, default=list)
     
-    # Relationships
-    tags = relationship("AgentTag", back_populates="agent")
+    # Trust and performance metrics
+    trust_score = Column(Float, default=0.5)
+    total_tasks_completed = Column(Integer, default=0)
+    total_tasks_failed = Column(Integer, default=0)
+    avg_completion_time_seconds = Column(Float, nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    last_seen_at = Column(DateTime(timezone=True), nullable=True)
+    last_task_completed_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Sprint 7: Routing field
+    last_assigned_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Relationships - FIXED
+    assigned_tasks = relationship("Task", back_populates="assigned_agent")
     capabilities = relationship("Capability", back_populates="agent")
-    trust_record = relationship("TrustRecord", back_populates="agent", uselist=False)
-    assigned_tasks = relationship("Task", back_populates="assigned_agent", foreign_keys="Task.assigned_agent_id")
-
+    trust_records = relationship("TrustRecord", back_populates="agent")
 
 class AgentTag(Base):
     """Agent tags for categorization"""
@@ -61,10 +74,6 @@ class AgentTag(Base):
     
     agent_id = Column(String(64), ForeignKey("agents.agent_id"), primary_key=True)
     tag = Column(String(100), primary_key=True)
-    
-    # Relationships
-    agent = relationship("Agent", back_populates="tags")
-
 
 class Capability(Base):
     """Agent capabilities"""
@@ -82,12 +91,12 @@ class Capability(Base):
     
     # Pricing
     pricing_model = Column(String(20))
-    price = Column(DECIMAL(10,4))
+    price = Column(DECIMAL(10, 4))
     currency = Column(String(10), default='USD')
     
     # SLO
     latency_p99_ms = Column(Integer)
-    availability_percent = Column(DECIMAL(5,2))
+    availability_percent = Column(DECIMAL(5, 2))
     
     deprecated = Column(Boolean, default=False)
     created_at = Column(DateTime, default=utc_now)
@@ -96,66 +105,24 @@ class Capability(Base):
     # Relationships
     agent = relationship("Agent", back_populates="capabilities")
 
-
-class TrustRecord(Base):
-    """Trust scores and reputation tracking"""
-    __tablename__ = "trust_records"
-    
-    record_id = Column(Integer, primary_key=True, autoincrement=True)
-    agent_id = Column(String(64), ForeignKey("agents.agent_id"), unique=True)
-    
-    # Scores
-    trust_score = Column(DECIMAL(5,2), default=50.0)
-    reputation_score = Column(DECIMAL(5,2), default=50.0)
-    rating = Column(DECIMAL(3,2), default=0.0)
-    total_ratings = Column(Integer, default=0)
-    
-    # Transactions
-    successful_transactions = Column(Integer, default=0)
-    failed_transactions = Column(Integer, default=0)
-    
-    # Uptime
-    uptime_30d = Column(DECIMAL(5,2), default=100.0)
-    uptime_90d = Column(DECIMAL(5,2), default=100.0)
-    uptime_all_time = Column(DECIMAL(5,2), default=100.0)
-    
-    # Performance
-    avg_latency_ms = Column(Integer, default=0)
-    p99_latency_ms = Column(Integer, default=0)
-    success_rate = Column(DECIMAL(5,2), default=100.0)
-    
-    # Security
-    verified_signer = Column(Boolean, default=False)
-    rate_limited = Column(Boolean, default=False)
-    fraud_flags = Column(Integer, default=0)
-    last_audit = Column(DateTime)
-    
-    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
-    
-    # Relationships
-    agent = relationship("Agent", back_populates="trust_record")
-
-
 class Task(Base):
     """AI Task Protocol (AITP) tasks"""
     __tablename__ = "tasks"
     
     task_id = Column(String(64), primary_key=True)
-    client_id = Column(String(64), nullable=False)  # Identifier of the client submitting the task
-    priority = Column(Integer, default=5)  # Should already exist from Sprint 3
-    # Priority range: 1-10, where 10 is highest priority
-
+    client_id = Column(String(64), nullable=False)
+    priority = Column(Integer, default=5)
+    
     # Task type and metadata
-    task_type = Column(String(100), nullable=False)  # e.g., "text-generation", "image-analysis", "data-processing"
-    capability_required = Column(String(255), nullable=False)  # Required capability name
-    priority = Column(Integer, default=5)  # 1-10, higher = more urgent
+    task_type = Column(String(100), nullable=False)
+    capability_required = Column(String(255), nullable=False)
     
     # Task data
-    input_data = Column(JSON, nullable=False)  # Task input parameters
-    task_metadata = Column(JSON)  # Additional metadata (tags, requirements, etc.)
+    input_data = Column(JSON, nullable=False)
+    task_metadata = Column(JSON)
     
     # Lifecycle status
-    status = Column(String(20), default='PENDING', nullable=False)  # PENDING, ASSIGNED, ACTIVE, COMPLETED, FAILED, CANCELLED
+    status = Column(String(20), default='PENDING', nullable=False)
     
     # Assignment and execution
     assigned_agent_id = Column(String(64), ForeignKey("agents.agent_id"))
@@ -164,35 +131,253 @@ class Task(Base):
     completed_at = Column(DateTime)
     
     # Results
-    result_data = Column(JSON)  # Task output/result
-    error_message = Column(Text)  # Error details if failed
+    result_data = Column(JSON)
+    error_message = Column(Text)
     
     # Retry and failure handling
     max_retries = Column(Integer, default=3)
     retry_count = Column(Integer, default=0)
     next_retry_at = Column(DateTime(timezone=True), nullable=True)
-    retry_policy = Column(String, default="exponential")  # exponential, linear, fixed
+    retry_policy = Column(String, default="exponential")
     last_error = Column(Text, nullable=True)
     
     # Timestamps
     created_at = Column(DateTime, default=utc_now)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
-    expires_at = Column(DateTime)  # Optional expiration time
-
-    # Timeout and cancellation fields (ADD THESE)
+    expires_at = Column(DateTime)
+    
+    # Timeout and cancellation fields
     timeout_seconds = Column(Integer, nullable=True)
     cancelled_at = Column(DateTime(timezone=True), nullable=True)
     cancelled_by = Column(String, nullable=True)
     cancellation_reason = Column(String, nullable=True)
     
+    # Sprint 7: Advanced Features fields
+    depends_on = Column(JSON, default=list)
+    blocked_by = Column(JSON, default=list)
+    is_blocked = Column(Boolean, default=False)
+    routing_strategy = Column(String(64), default="round_robin")
+    chain_id = Column(String(64), nullable=True)
+    template_id = Column(String(64), nullable=True)
+    
     # Relationships
-    assigned_agent = relationship("Agent", back_populates="assigned_tasks", foreign_keys=[assigned_agent_id])
+    assigned_agent = relationship("Agent", back_populates="assigned_tasks")
 
+class Webhook(Base):
+    __tablename__ = "webhooks"
+    
+    webhook_id = Column(String, primary_key=True)
+    agent_id = Column(String, nullable=False)
+    url = Column(String, nullable=False)
+    events = Column(String, nullable=False)
+    secret = Column(String, nullable=True)
+    active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    updated_at = Column(DateTime(timezone=True), nullable=False)
+
+class WebhookDelivery(Base):
+    __tablename__ = "webhook_deliveries"
+    
+    delivery_id = Column(String, primary_key=True)
+    webhook_id = Column(String, nullable=False)
+    event_type = Column(String, nullable=False)
+    payload = Column(String, nullable=False)
+    status = Column(String, nullable=False)
+    response_code = Column(Integer, nullable=True)
+    response_body = Column(String, nullable=True)
+    attempt_count = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    delivered_at = Column(DateTime(timezone=True), nullable=True)
+
+class TrustRecord(Base):
+    """Audit trail for trust score changes"""
+    __tablename__ = "trust_records"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    record_id = Column(String, unique=True, nullable=False, index=True)
+    agent_id = Column(String, ForeignKey("agents.agent_id"), nullable=False, index=True)
+    event_type = Column(String, nullable=False)
+    task_id = Column(String, nullable=True)
+    trust_delta = Column(Float, nullable=False)
+    trust_score_before = Column(Float, nullable=False)
+    trust_score_after = Column(Float, nullable=False)
+    reason = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationship
+    agent = relationship("Agent", back_populates="trust_records")
+
+class APIKey(Base):
+    """API keys for client authentication"""
+    __tablename__ = "api_keys"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    key_id = Column(String(64), unique=True, nullable=False, index=True)
+    key_hash = Column(String(128), nullable=False)
+    client_id = Column(String(64), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    scopes = Column(JSON, default=list)
+    
+    # Status and lifecycle
+    active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Rate limiting
+    rate_limit_per_minute = Column(Integer, default=60)
+    rate_limit_per_hour = Column(Integer, default=1000)
+    
+    # Metadata
+    created_by = Column(String(64), nullable=True)
+    description = Column(String(512), nullable=True)
+    
+    __table_args__ = (
+        Index('idx_api_keys_client_active', 'client_id', 'active'),
+        Index('idx_api_keys_key_id', 'key_id'),
+    )
+
+class RateLimitTracker(Base):
+    """Track API usage for rate limiting"""
+    __tablename__ = "rate_limit_tracker"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    key_id = Column(String(64), ForeignKey("api_keys.key_id"), nullable=False, index=True)
+    window_start = Column(DateTime(timezone=True), nullable=False)
+    window_type = Column(String(20), nullable=False)
+    request_count = Column(Integer, default=0)
+    
+    __table_args__ = (
+        Index('idx_rate_limit_key_window', 'key_id', 'window_start', 'window_type'),
+    )
+
+class AuditLog(Base):
+    """Security audit log"""
+    __tablename__ = "audit_logs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    event_type = Column(String(64), nullable=False, index=True)
+    client_id = Column(String(64), nullable=True, index=True)
+    key_id = Column(String(64), nullable=True)
+    
+    # Event details
+    action = Column(String(128), nullable=False)
+    resource_type = Column(String(64), nullable=True)
+    resource_id = Column(String(128), nullable=True)
+    
+    # Request context
+    ip_address = Column(String(45), nullable=True)
+    user_agent = Column(String(512), nullable=True)
+    
+    # Result
+    success = Column(Boolean, nullable=False)
+    error_message = Column(String(512), nullable=True)
+    
+    # Additional data
+    extra_metadata = Column(JSON, default=dict)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    __table_args__ = (
+        Index('idx_audit_logs_created', 'created_at'),
+        Index('idx_audit_logs_client_event', 'client_id', 'event_type'),
+    )
+
+class TaskChain(Base):
+    """Task chains for sequential workflow execution"""
+    __tablename__ = "task_chains"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    chain_id = Column(String(64), unique=True, nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    client_id = Column(String(64), nullable=False, index=True)
+    
+    # Chain definition
+    steps = Column(JSON, nullable=False)
+    current_step = Column(Integer, default=0)
+    
+    # Status
+    status = Column(String(32), default="PENDING")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Results
+    step_results = Column(JSON, default=dict)
+    final_result = Column(JSON, nullable=True)
+    error_message = Column(String(512), nullable=True)
+    
+    __table_args__ = (
+        Index('idx_task_chains_client_id', 'client_id'),
+        Index('idx_task_chains_status', 'status'),
+    )
+
+class ScheduledTask(Base):
+    """Scheduled tasks with cron expressions"""
+    __tablename__ = "scheduled_tasks"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    schedule_id = Column(String(64), unique=True, nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    client_id = Column(String(64), nullable=False, index=True)
+    
+    # Schedule configuration
+    cron_expression = Column(String(128), nullable=False)
+    timezone = Column(String(64), default="UTC")
+    
+    # Task template
+    task_type = Column(String(128), nullable=False)
+    capability_required = Column(String(256), nullable=False)
+    input_data = Column(JSON, nullable=False)
+    priority = Column(Integer, default=5)
+    timeout_seconds = Column(Integer, default=300)
+    
+    # Status
+    active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_run_at = Column(DateTime(timezone=True), nullable=True)
+    next_run_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Stats
+    total_runs = Column(Integer, default=0)
+    successful_runs = Column(Integer, default=0)
+    failed_runs = Column(Integer, default=0)
+    
+    __table_args__ = (
+        Index('idx_scheduled_tasks_client_id', 'client_id'),
+        Index('idx_scheduled_tasks_active', 'active'),
+        Index('idx_scheduled_tasks_next_run', 'next_run_at'),
+    )
+
+class TaskTemplate(Base):
+    """Reusable task templates"""
+    __tablename__ = "task_templates"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    template_id = Column(String(64), unique=True, nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(String(512), nullable=True)
+    client_id = Column(String(64), nullable=False, index=True)
+    
+    # Template configuration
+    task_type = Column(String(128), nullable=False)
+    capability_required = Column(String(256), nullable=False)
+    default_input_data = Column(JSON, nullable=False)
+    default_priority = Column(Integer, default=5)
+    default_timeout = Column(Integer, default=300)
+    default_max_retries = Column(Integer, default=3)
+    
+    # Usage tracking
+    times_used = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    __table_args__ = (
+        Index('idx_task_templates_client_id', 'client_id'),
+    )
 
 def create_tables():
     """Create all tables"""
     Base.metadata.create_all(bind=engine)
-
 
 def get_db():
     """Get database session"""
@@ -201,32 +386,3 @@ def get_db():
         yield db
     finally:
         db.close()
-
-# Add to ains/db.py after the Task model
-
-class Webhook(Base):
-    __tablename__ = "webhooks"
-    
-    webhook_id = Column(String, primary_key=True)
-    agent_id = Column(String, nullable=False)
-    url = Column(String, nullable=False)
-    events = Column(String, nullable=False)  # JSON array
-    secret = Column(String, nullable=True)
-    active = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime(timezone=True), nullable=False)
-    updated_at = Column(DateTime(timezone=True), nullable=False)
-
-
-class WebhookDelivery(Base):
-    __tablename__ = "webhook_deliveries"
-    
-    delivery_id = Column(String, primary_key=True)
-    webhook_id = Column(String, nullable=False)
-    event_type = Column(String, nullable=False)
-    payload = Column(String, nullable=False)  # JSON
-    status = Column(String, nullable=False)  # pending, success, failed
-    response_code = Column(Integer, nullable=True)
-    response_body = Column(String, nullable=True)
-    attempt_count = Column(Integer, default=0, nullable=False)
-    created_at = Column(DateTime(timezone=True), nullable=False)
-    delivered_at = Column(DateTime(timezone=True), nullable=True)
