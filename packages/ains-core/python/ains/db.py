@@ -20,7 +20,7 @@ Base = declarative_base()
 # Database connection - use SQLite for tests, PostgreSQL for production
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "sqlite:///./test_ains_temp.db"  # SQLite for local development/testing
+    "sqlite:///./ains.db"  # SQLite for local development/testing
 )
 
 # Create engine
