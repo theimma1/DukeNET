@@ -932,10 +932,10 @@ def list_tasks(
     if task_type:
         query = query.filter(ScheduledTask.task_type == task_type)
     if assigned_agent_id:
-        query = query.filter(ScheduledTask.assigned_agent_id == assigned_agent_id)
+        query = query.filter(Task.assigned_agent_id == assigned_agent_id)
     
     total = query.count()
-    tasks = query.order_by(ScheduledTask.created_at.desc()).limit(limit).offset(offset).all()
+    tasks = query.order_by(Task.created_at.desc()).limit(limit).offset(offset).all()
     
     return {
         "tasks": [
