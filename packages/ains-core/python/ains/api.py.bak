@@ -33,7 +33,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from .db import SessionLocal
 from .routing import route_pending_tasks
-from .queue import PriorityQueue, adjust_priority_by_age
+from .task_queue import PriorityQueue, adjust_priority_by_age
 
 
 

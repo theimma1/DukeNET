@@ -13,6 +13,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
+
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./ains.db")
 
 Base = declarative_base()
@@ -47,6 +48,12 @@ class Agent(Base):
     endpoint = Column(String(512), nullable=False)
     signature = Column(String, nullable=False)
     tags = Column(JSON, default=list)
+    
+    # ✅ ADDED: Agent status field
+    status = Column(String(32), default="AVAILABLE", nullable=False)
+    
+    # ✅ ADDED: Heartbeat timestamp
+    last_heartbeat = Column(DateTime(timezone=True), nullable=True)
     
     # Trust and performance metrics
     trust_score = Column(Float, default=0.5)

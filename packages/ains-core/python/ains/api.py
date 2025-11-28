@@ -33,7 +33,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from .db import SessionLocal
 from .routing import route_pending_tasks
-from .queue import PriorityQueue, adjust_priority_by_age
+from .task_queue import PriorityQueue, adjust_priority_by_age
 import secrets  # Add this if not already present
 
 from .advanced_features import (
@@ -652,30 +652,47 @@ def send_heartbeat(agent_id: str, heartbeat: Heartbeat, db: Session = Depends(ge
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    agent.last_heartbeat = datetime.now(timezone.utc)
-    agent.status = heartbeat.status
-
-    # Update uptime and metrics tracking here if needed
-
-    cache.invalidate_agent(agent_id)
-    db.commit()
+    try:
+        # Map heartbeat status to agent model status
+        status_mapping = {
+            "ACTIVE": "AVAILABLE",
+            "DEGRADED": "BUSY",
+            "OFFLINE": "INACTIVE"
+        }
+        
+        # Update timestamp and status
+        agent.last_heartbeat = datetime.now(timezone.utc)
+        
+        # Only update status if the heartbeat status is valid
+        if heartbeat.status in status_mapping:
+            agent.status = status_mapping[heartbeat.status]
+        
+        cache.invalidate_agent(agent_id)
+        db.commit()
+        
+        # ========== METRICS: Track agent heartbeat ==========
+        from ains.observability.metrics import agents_active, update_agent_metrics
+        
+        active_agents = db.query(Agent).filter(Agent.status == "AVAILABLE").count()
+        agents_active.set(active_agents)
+        
+        update_agent_metrics(
+            agent_id=agent.agent_id,
+            display_name=agent.display_name,
+            trust_score=float(agent.trust_score)
+        )
+        
+        return {
+            "acknowledged": True,
+            "next_heartbeat_in": 300,
+            "agent_health_status": heartbeat.status,
+            "agent_status": agent.status,
+            "last_heartbeat": agent.last_heartbeat.isoformat()
+        }
     
-    # ========== METRICS: Track agent heartbeat ==========
-    from ains.observability.metrics import agents_active, update_agent_metrics
-    
-    # Update active agents count
-    active_agents = db.query(Agent).filter(Agent.status == "AVAILABLE").count()
-    agents_active.set(active_agents)
-    
-    # Update agent trust score (in case it changed)
-    update_agent_metrics(
-        agent_id=agent.agent_id,
-        display_name=agent.display_name,
-        trust_score=float(agent.trust_score)
-    )
-    # ====================================================
-    
-    return {"acknowledged": True, "next_heartbeat_in": 300}
+    except Exception as e:
+        print(f"❌ Heartbeat error for agent {agent_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed: {str(e)}")
 
 
 
