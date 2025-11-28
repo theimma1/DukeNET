@@ -385,7 +385,7 @@ def register_agent(registration: AgentRegistration, db: Session = Depends(get_db
     
     # Update agent counts
     total_agents = db.query(Agent).count()
-    active_agents = db.query(Agent).filter(Agent.status == "AVAILABLE").count()
+    active_agents = total_agents
     agents_total.set(total_agents)
     agents_active.set(active_agents)
     
