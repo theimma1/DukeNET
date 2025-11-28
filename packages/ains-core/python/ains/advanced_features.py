@@ -6,7 +6,7 @@ import random
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 
-from .db import Task, Agent, TaskChain, ScheduledTask, TaskTemplate
+from .db import Task, Agent, TaskChain, ScheduledTask
 
 
 # ============================================================================

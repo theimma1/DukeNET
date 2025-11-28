@@ -43,7 +43,7 @@ from .advanced_features import (
     check_and_execute_scheduled_tasks, create_task_template,
     create_task_from_template
 )
-from .db import TaskChain, ScheduledTask, TaskTemplate
+from .db import TaskChain, ScheduledTask
 
 from fastapi.responses import Response as FastAPIResponse
 from ains.observability.metrics import get_metrics, initialize_app_info

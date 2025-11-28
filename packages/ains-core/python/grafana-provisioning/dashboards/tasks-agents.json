@@ -1,0 +1,84 @@
+{
+  "dashboard": {
+    "title": "AINS - Tasks & Agents",
+    "tags": ["ains", "tasks", "agents"],
+    "timezone": "browser",
+    "refresh": "10s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Task Throughput (tasks/sec)",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "rate(tasks_created_total[1m])",
+            "legendFormat": "Created"
+          },
+          {
+            "expr": "rate(tasks_completed_total[1m])",
+            "legendFormat": "Completed"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Task Queue Depth",
+        "type": "stat",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+        "targets": [
+          {
+            "expr": "tasks_queue_depth"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Agent Heartbeats (per min)",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+        "targets": [
+          {
+            "expr": "rate(agent_heartbeats_total[1m])*60",
+            "legendFormat": "{{agent_id}}"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Agent Status Distribution",
+        "type": "piechart",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+        "targets": [
+          {
+            "expr": "agent_status",
+            "legendFormat": "{{status}}"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Task Completion Rate (%)",
+        "type": "gauge",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+        "targets": [
+          {
+            "expr": "(rate(tasks_completed_total[5m]) / rate(tasks_created_total[5m])) * 100"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Task Failure Rate",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+        "targets": [
+          {
+            "expr": "rate(tasks_failed_total[1m])",
+            "legendFormat": "Failed tasks"
+          }
+        ]
+      }
+    ]
+  }
+}
