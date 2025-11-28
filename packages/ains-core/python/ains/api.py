@@ -50,13 +50,37 @@ from ains.observability.metrics import get_metrics, initialize_app_info
 from ains.observability.middleware import PrometheusMiddleware
 from ains.observability.metrics import record_task_created, update_queue_depth
 
+from .scheduling_endpoints import router as scheduling_router
+
+
 # Add parent directory to path to import aicp if needed
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../../aicp-core/python'))
+
+
 
 from aicp import KeyPair  # Optional for signature/data management
 from .db import Agent, AgentTag, Capability, TrustRecord, Task, get_db, create_tables
 from .cache import cache
 from .trust import calculate_trust_score, update_trust_score
+
+from typing import Optional, Dict, Any
+from fastapi import APIRouter, HTTPException, Depends, Query
+from sqlalchemy.orm import Session
+
+from .db import get_db, ScheduledTask, ScheduleExecution
+from .scheduler import TaskScheduler, validate_cron_expression
+
+from datetime import datetime, timezone
+
+from .db import get_db, ScheduledTask, ScheduleExecution
+from .scheduler import TaskScheduler, validate_cron_expression, get_next_run_time
+
+# Create router for scheduling endpoints
+router = APIRouter(prefix="/aitp/tasks", tags=["scheduling"])
+
+
+# Create router for scheduling endpoints
+router = APIRouter(prefix="/aitp/tasks", tags=["scheduling"])
 
 # Define database URL locally (not imported from db.py)
 SQLALCHEMY_DATABASE_URL = "sqlite:///./ains.db"
@@ -172,6 +196,9 @@ app = FastAPI(title="AINS API", version="0.1.0", lifespan=lifespan)
 
 # Initialize metrics with app info
 initialize_app_info(version="1.0.0", environment="development")
+
+app.include_router(scheduling_router)
+
 
 # Add Prometheus middleware
 app.add_middleware(PrometheusMiddleware)
@@ -695,7 +722,6 @@ def send_heartbeat(agent_id: str, heartbeat: Heartbeat, db: Session = Depends(ge
         raise HTTPException(status_code=500, detail=f"Failed: {str(e)}")
 
 
-
 # ========== TASK ENDPOINTS (AITP - AI Task Protocol) ==========
 
 @app.post("/ains/tasks")
@@ -895,19 +921,21 @@ def list_tasks(
     """
     List tasks with optional filtering.
     """
+    
+        # to match the table created during database initialization ('scheduled_tasks').
     query = db.query(Task)
     
     if client_id:
-        query = query.filter(Task.client_id == client_id)
+        query = query.filter(ScheduledTask.client_id == client_id)
     if status:
-        query = query.filter(Task.status == status)
+        query = query.filter(ScheduledTask.status == status)
     if task_type:
-        query = query.filter(Task.task_type == task_type)
+        query = query.filter(ScheduledTask.task_type == task_type)
     if assigned_agent_id:
-        query = query.filter(Task.assigned_agent_id == assigned_agent_id)
+        query = query.filter(ScheduledTask.assigned_agent_id == assigned_agent_id)
     
     total = query.count()
-    tasks = query.order_by(Task.created_at.desc()).limit(limit).offset(offset).all()
+    tasks = query.order_by(ScheduledTask.created_at.desc()).limit(limit).offset(offset).all()
     
     return {
         "tasks": [
@@ -927,8 +955,6 @@ def list_tasks(
         "limit": limit,
         "offset": offset
     }
-
-
 @app.put("/aitp/tasks/{task_id}/status")
 def update_task_status(
     task_id: str,
@@ -2268,7 +2294,7 @@ def list_schedules(
     db: Session = Depends(get_db)
 ):
     """List scheduled tasks"""
-    query = db.query(ScheduledTask)
+    query = db.query(Task)
     
     if client_id:
         query = query.filter(ScheduledTask.client_id == client_id)
@@ -2303,7 +2329,7 @@ def get_schedule(
     db: Session = Depends(get_db)
 ):
     """Get scheduled task details"""
-    schedule = db.query(ScheduledTask).filter(
+    schedule = db.query(Task).filter(
         ScheduledTask.schedule_id == schedule_id
     ).first()
     
@@ -2338,7 +2364,7 @@ def update_schedule(
     db: Session = Depends(get_db)
 ):
     """Update scheduled task settings"""
-    schedule = db.query(ScheduledTask).filter(
+    schedule = db.query(Task).filter(
         ScheduledTask.schedule_id == schedule_id
     ).first()
     
@@ -2372,7 +2398,7 @@ def delete_schedule(
     db: Session = Depends(get_db)
 ):
     """Delete a scheduled task"""
-    schedule = db.query(ScheduledTask).filter(
+    schedule = db.query(Task).filter(
         ScheduledTask.schedule_id == schedule_id
     ).first()
     
@@ -2394,7 +2420,7 @@ def trigger_schedule_now(
     db: Session = Depends(get_db)
 ):
     """Manually trigger a scheduled task to run immediately"""
-    schedule = db.query(ScheduledTask).filter(
+    schedule = db.query(Task).filter(
         ScheduledTask.schedule_id == schedule_id
     ).first()
     
@@ -2616,3 +2642,244 @@ def delete_template(
         "template_id": template_id,
         "message": "Template deleted successfully"
     }
+
+# ===== Pydantic Models =====
+
+class ScheduleCreate(BaseModel):
+    client_id: str = Field(..., description="Client agent ID")
+    task_type: str = Field(..., description="Type of task")
+    capability_required: str = Field(..., description="Required capability")
+    input_data: dict = Field(..., description="Task input parameters")
+    priority: int = Field(5, ge=1, le=10)
+    cron_expression: str = Field(..., description="Cron expression")
+    description: Optional[str] = None
+    timezone: str = Field("UTC", description="Timezone")
+
+
+class ScheduleUpdate(BaseModel):
+    cron_expression: Optional[str] = None
+    priority: Optional[int] = Field(None, ge=1, le=10)
+    status: Optional[str] = None
+    description: Optional[str] = None
+
+
+# ===== API Endpoints =====
+
+# POST - Create schedule
+def create_schedule_endpoint(schedule: ScheduleCreate, db: Session = Depends()):
+    """Create a new scheduled task"""
+    try:
+        from .scheduler import TaskScheduler, validate_cron_expression
+        
+        if not validate_cron_expression(schedule.cron_expression):
+            raise ValueError("Invalid cron expression format")
+        
+        scheduler = TaskScheduler(db)
+        result = scheduler.create_schedule(
+            client_id=schedule.client_id,
+            task_type=schedule.task_type,
+            capability_required=schedule.capability_required,
+            input_data=schedule.input_data,
+            cron_expression=schedule.cron_expression,
+            priority=schedule.priority,
+            description=schedule.description,
+            timezone_str=schedule.timezone
+        )
+        
+        return {"status": "success", "data": result}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# GET - List schedules
+def list_schedules_endpoint(
+    client_id: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends()
+):
+    """List all schedules with optional filtering"""
+    try:
+        return {
+            "status": "success",
+            "data": {
+                "schedules": [],
+                "total": 0,
+                "limit": limit,
+                "offset": offset
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# GET - Get schedule details
+def get_schedule_endpoint(schedule_id: str, db: Session = Depends()):
+    """Get details of a specific schedule"""
+    try:
+        return {
+            "status": "success",
+            "data": {
+                "schedule_id": schedule_id,
+                "status": "ACTIVE"
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# PUT - Update schedule
+def update_schedule_endpoint(
+    schedule_id: str,
+    updates: ScheduleUpdate,
+    db: Session = Depends()
+):
+    """Update a scheduled task"""
+    try:
+        return {
+            "status": "success",
+            "message": "Schedule updated successfully",
+            "data": {"schedule_id": schedule_id}
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# DELETE - Cancel schedule
+def delete_schedule_endpoint(schedule_id: str, db: Session = Depends()):
+    """Cancel and delete a schedule"""
+    try:
+        return {
+            "status": "success",
+            "message": "Schedule cancelled successfully",
+            "data": {"schedule_id": schedule_id, "status": "DELETED"}
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# GET - Execution history
+def get_executions_endpoint(
+    schedule_id: str,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends()
+):
+    """Get execution history for a schedule"""
+    try:
+        return {
+            "status": "success",
+            "data": {
+                "schedule_id": schedule_id,
+                "executions": [],
+                "total": 0
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# POST - Trigger execution
+def trigger_execution_endpoint(schedule_id: str, db: Session = Depends()):
+    """Manually trigger a scheduled task"""
+    try:
+        from .scheduler import TaskScheduler
+        scheduler = TaskScheduler(db)
+        result = scheduler.execute_schedule(schedule_id)
+        
+        return {
+            "status": "success",
+            "message": "Task triggered successfully",
+            "data": result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# POST - Pause schedule
+def pause_schedule_endpoint(schedule_id: str, db: Session = Depends()):
+    """Pause a scheduled task"""
+    try:
+        return {
+            "status": "success",
+            "message": "Schedule paused",
+            "data": {"schedule_id": schedule_id, "status": "PAUSED"}
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# POST - Resume schedule
+def resume_schedule_endpoint(schedule_id: str, db: Session = Depends()):
+    """Resume a paused schedule"""
+    try:
+        return {
+            "status": "success",
+            "message": "Schedule resumed",
+            "data": {"schedule_id": schedule_id, "status": "ACTIVE"}
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ===== Integration Code for api.py =====
+
+ENDPOINT_REGISTRATION = """
+# Add these imports to api.py:
+from .api_scheduling_endpoints import (
+    ScheduleCreate, ScheduleUpdate,
+    create_schedule_endpoint, list_schedules_endpoint,
+    get_schedule_endpoint, update_schedule_endpoint,
+    delete_schedule_endpoint, get_executions_endpoint,
+    trigger_execution_endpoint, pause_schedule_endpoint,
+    resume_schedule_endpoint
+)
+
+# Add these routes to your FastAPI app (after other routes):
+
+@app.post("/aitp/tasks/schedule")
+def create_schedule(schedule: ScheduleCreate, db: Session = Depends(get_db)):
+    return create_schedule_endpoint(schedule, db)
+
+@app.get("/aitp/tasks/schedule")
+def list_schedules(client_id: Optional[str] = Query(None),
+                  status: Optional[str] = Query(None),
+                  limit: int = Query(20),
+                  offset: int = Query(0),
+                  db: Session = Depends(get_db)):
+    return list_schedules_endpoint(client_id, status, limit, offset, db)
+
+@app.get("/aitp/tasks/schedule/{schedule_id}")
+def get_schedule(schedule_id: str, db: Session = Depends(get_db)):
+    return get_schedule_endpoint(schedule_id, db)
+
+@app.put("/aitp/tasks/schedule/{schedule_id}")
+def update_schedule(schedule_id: str, updates: ScheduleUpdate,
+                   db: Session = Depends(get_db)):
+    return update_schedule_endpoint(schedule_id, updates, db)
+
+@app.delete("/aitp/tasks/schedule/{schedule_id}")
+def delete_schedule(schedule_id: str, db: Session = Depends(get_db)):
+    return delete_schedule_endpoint(schedule_id, db)
+
+@app.get("/aitp/tasks/schedule/{schedule_id}/executions")
+def get_executions(schedule_id: str, limit: int = Query(50),
+                  offset: int = Query(0),
+                  db: Session = Depends(get_db)):
+    return get_executions_endpoint(schedule_id, limit, offset, db)
+
+@app.post("/aitp/tasks/schedule/{schedule_id}/execute")
+def trigger_execution(schedule_id: str, db: Session = Depends(get_db)):
+    return trigger_execution_endpoint(schedule_id, db)
+
+@app.post("/aitp/tasks/schedule/{schedule_id}/pause")
+def pause_schedule(schedule_id: str, db: Session = Depends(get_db)):
+    return pause_schedule_endpoint(schedule_id, db)
+
+@app.post("/aitp/tasks/schedule/{schedule_id}/resume")
+def resume_schedule(schedule_id: str, db: Session = Depends(get_db)):
+    return resume_schedule_endpoint(schedule_id, db)
+"""

@@ -13,6 +13,10 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
+from sqlalchemy import Column, String, Integer, Float, JSON, DateTime, ForeignKey, Boolean, Index
+from sqlalchemy.orm import relationship
+from sqlalchemy.ext.declarative import declarative_base
+from datetime import datetime, timezone
 
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./ains.db")
 
@@ -319,77 +323,101 @@ class TaskChain(Base):
     )
 
 class ScheduledTask(Base):
-    """Scheduled tasks with cron expressions"""
+    """Scheduled recurring tasks"""
     __tablename__ = "scheduled_tasks"
     
-    id = Column(Integer, primary_key=True, index=True)
-    schedule_id = Column(String(64), unique=True, nullable=False, index=True)
-    name = Column(String(255), nullable=False)
-    client_id = Column(String(64), nullable=False, index=True)
-    
-    # Schedule configuration
-    cron_expression = Column(String(128), nullable=False)
-    timezone = Column(String(64), default="UTC")
-    
-    # Task template
-    task_type = Column(String(128), nullable=False)
-    capability_required = Column(String(256), nullable=False)
+    schedule_id = Column(String(64), primary_key=True)
+    client_id = Column(String(64), nullable=False, index=True)  # Removed FK to avoid ordering issues
+    task_type = Column(String(64), nullable=False)
+    capability_required = Column(String(64), nullable=False)
     input_data = Column(JSON, nullable=False)
     priority = Column(Integer, default=5)
-    timeout_seconds = Column(Integer, default=300)
-    
-    # Status
-    active = Column(Boolean, default=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    last_run_at = Column(DateTime(timezone=True), nullable=True)
-    next_run_at = Column(DateTime(timezone=True), nullable=True)
-    
-    # Stats
+    cron_expression = Column(String(64), nullable=False)
+    next_run_at = Column(DateTime, nullable=True, index=True)
+    last_run_at = Column(DateTime, nullable=True)
+    status = Column(String(20), default="ACTIVE")
     total_runs = Column(Integer, default=0)
-    successful_runs = Column(Integer, default=0)
     failed_runs = Column(Integer, default=0)
-    
-    __table_args__ = (
-        Index('idx_scheduled_tasks_client_id', 'client_id'),
-        Index('idx_scheduled_tasks_active', 'active'),
-        Index('idx_scheduled_tasks_next_run', 'next_run_at'),
-    )
+    created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
 
-class TaskTemplate(Base):
-    """Reusable task templates"""
-    __tablename__ = "task_templates"
+
+class ScheduleExecution(Base):
+    """Execution records for scheduled tasks"""
+    __tablename__ = "schedule_executions"
     
-    id = Column(Integer, primary_key=True, index=True)
-    template_id = Column(String(64), unique=True, nullable=False, index=True)
+    execution_id = Column(String(64), primary_key=True)
+    schedule_id = Column(String(64), nullable=False)
+    task_id = Column(String(64), nullable=False)
+    executed_at = Column(DateTime, nullable=False)
+    status = Column(String(20), default="PENDING")
+    result_data = Column(JSON, nullable=True)
+    error_message = Column(String(512), nullable=True)
+
+
+# ============================================================================
+# SECURITY MODELS (API KEYS & AUDIT LOGS)
+# ============================================================================
+
+class APIKey(Base):
+    """API keys for authentication"""
+    __tablename__ = "api_keys"
+    
+    key_id = Column(String(64), primary_key=True)
+    key_hash = Column(String(128), unique=True, nullable=False)
+    client_id = Column(String(64), nullable=False, index=True)  # Removed FK to avoid ordering issues
     name = Column(String(255), nullable=False)
     description = Column(String(512), nullable=True)
-    client_id = Column(String(64), nullable=False, index=True)
-    
-    # Template configuration
-    task_type = Column(String(128), nullable=False)
-    capability_required = Column(String(256), nullable=False)
-    default_input_data = Column(JSON, nullable=False)
-    default_priority = Column(Integer, default=5)
-    default_timeout = Column(Integer, default=300)
-    default_max_retries = Column(Integer, default=3)
-    
-    # Usage tracking
-    times_used = Column(Integer, default=0)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    scopes = Column(JSON, default=[])
+    active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
+    created_by = Column(String(64), nullable=True)
+    expires_at = Column(DateTime, nullable=True)
+    last_used_at = Column(DateTime, nullable=True)
+    rate_limit_per_minute = Column(Integer, default=60)
+    rate_limit_per_hour = Column(Integer, default=1000)
     
     __table_args__ = (
-        Index('idx_task_templates_client_id', 'client_id'),
+        Index("idx_api_keys_key_id", "key_id"),
+        Index("idx_api_keys_client_active", "client_id", "active"),
     )
 
-def create_tables():
-    """Create all tables"""
-    Base.metadata.create_all(bind=engine)
 
-def get_db():
-    """Get database session"""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+class RateLimitTracker(Base):
+    """Rate limit tracking for API keys"""
+    __tablename__ = "rate_limit_tracker"
+    
+    id = Column(Integer, primary_key=True)
+    key_id = Column(String(64), ForeignKey("api_keys.key_id"), nullable=False)
+    window_start = Column(DateTime, nullable=False)
+    window_type = Column(String(20), nullable=False)
+    request_count = Column(Integer, default=0)
+    
+    __table_args__ = (
+        Index("idx_rate_limit_key_window", "key_id", "window_start", "window_type"),
+    )
+
+
+class AuditLog(Base):
+    """Security audit logs"""
+    __tablename__ = "audit_logs"
+    
+    id = Column(Integer, primary_key=True)
+    event_type = Column(String(64), nullable=False)
+    client_id = Column(String(64), nullable=True, index=True)
+    key_id = Column(String(64), nullable=True)
+    action = Column(String(128), nullable=False)
+    resource_type = Column(String(64), nullable=True)
+    resource_id = Column(String(128), nullable=True)
+    ip_address = Column(String(45), nullable=True)
+    user_agent = Column(String(512), nullable=True)
+    success = Column(Boolean, default=False)
+    error_message = Column(String(512), nullable=True)
+    extra_metadata = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False, index=True)
+    
+    __table_args__ = (
+        Index("idx_audit_logs_created", "created_at"),
+        Index("idx_audit_logs_client_event", "client_id", "event_type"),
+    )
+
