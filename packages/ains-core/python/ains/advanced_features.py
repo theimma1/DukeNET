@@ -480,11 +480,11 @@ def create_task_template(
     default_priority: int = 5,
     default_timeout: int = 300,
     default_max_retries: int = 3
-) -> TaskTemplate:
+) -> dict:
     """Create a reusable task template"""
     template_id = f"tmpl_{secrets.token_hex(8)}"
     
-    template = TaskTemplate(
+    template = dict(
         template_id=template_id,
         name=name,
         description=description,
