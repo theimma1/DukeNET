@@ -48,3 +48,4 @@ dukenet_architecture.html
 todo-list.html
 *.db
 *.sqlite
+packages/ains-core/python/data/
