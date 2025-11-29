@@ -3,3 +3,4 @@ from .message import AICPMessage
 
 __version__ = "0.1.0"
 __all__ = ["AICPMessage"]
+from .websocket_transport import AICPWebSocketServer, AICPWebSocketClient
