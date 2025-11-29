@@ -9,7 +9,7 @@ services:
       pip install -r requirements.txt
     startCommand: >
       cd packages/ains-core/python &&
-      python -m uvicorn ains.api:app --host 0.0.0.0 --port 8000
+      bash startup.sh
     healthCheckPath: /health
     envVars:
       - key: PYTHONUNBUFFERED
