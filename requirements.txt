@@ -57,5 +57,4 @@ msgpack==1.0.8
 
 # AICP Core Protocol
 PyNaCl==1.5.0
-ed25519==1.5
 base58==2.1.1
