@@ -1,91 +1,74 @@
-"""AICP Message Structure and Serialization"""
-
 import uuid
 import time
-import msgpack
-from enum import IntEnum
+import json
+from typing import Dict, Any, Optional
 from dataclasses import dataclass, asdict
-from typing import Optional, Dict, Any
-
-
-class MessageType(IntEnum):
-    """AICP Message Types"""
-    REQUEST = 0x01
-    RESPONSE = 0x02
-    ACK = 0x03
-    ERROR = 0x04
-    PING = 0x05
-    BROADCAST = 0x06
-
+import msgspec
+import nacl.signing
+import nacl.encoding
+import base64
 
 @dataclass
-class MessageHeader:
-    """AICP Message Header (96 bytes)"""
-    version: int = 0x01
-    message_type: MessageType = MessageType.REQUEST
-    message_id: str = None
+class AICPMessage:
+    version: str = "1.0"
+    id: str = None
     timestamp: int = None
-    source_agent_id: str = None
-    destination_agent_id: str = None
-    payload_length: int = 0
-    flags: int = 0
-    ttl: int = 255
+    sender: str = ""
+    recipient: str = ""
+    type: str = "request"
+    method: str = ""
+    payload: Dict[str, Any] = None
+    signature: Optional[str] = None
     
     def __post_init__(self):
-        if self.message_id is None:
-            self.message_id = str(uuid.uuid4())
+        if self.id is None:
+            self.id = str(uuid.uuid4())
         if self.timestamp is None:
-            self.timestamp = int(time.time() * 1_000_000_000)  # nanoseconds
-
-
-@dataclass
-class Message:
-    """AICP Message with Header and Payload"""
-    header: MessageHeader
-    body: Dict[str, Any]
-    signature: Optional[bytes] = None
-    nonce: Optional[bytes] = None
+            self.timestamp = int(time.time() * 1000)
+        if self.payload is None:
+            self.payload = {}
     
     def serialize(self) -> bytes:
-        """Serialize message to bytes using MessagePack"""
-        data = {
-            "header": asdict(self.header),
-            "body": self.body,
-            "signature": self.signature,
-            "nonce": self.nonce,
-        }
-        return msgpack.packb(data, use_bin_type=True)
+        """Binary serialization using msgspec"""
+        encoder = msgspec.json.Encoder()
+        return encoder.encode(asdict(self))
     
     @classmethod
-    def deserialize(cls, data: bytes) -> "Message":
-        """Deserialize message from bytes"""
-        unpacked = msgpack.unpackb(data, raw=False)
-        
-        header_dict = unpacked["header"]
-        header = MessageHeader(
-            version=header_dict["version"],
-            message_type=MessageType(header_dict["message_type"]),
-            message_id=header_dict["message_id"],
-            timestamp=header_dict["timestamp"],
-            source_agent_id=header_dict["source_agent_id"],
-            destination_agent_id=header_dict["destination_agent_id"],
-            payload_length=header_dict["payload_length"],
-            flags=header_dict["flags"],
-            ttl=header_dict["ttl"],
-        )
-        
-        return cls(
-            header=header,
-            body=unpacked["body"],
-            signature=unpacked.get("signature"),
-            nonce=unpacked.get("nonce"),
-        )
+    def deserialize(cls, data: bytes) -> 'AICPMessage':
+        """Deserialize from binary"""
+        decoder = msgspec.json.Decoder(cls)
+        return decoder.decode(data)
     
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert message to dictionary"""
-        return {
-            "header": asdict(self.header),
-            "body": self.body,
-            "signature": self.signature.hex() if self.signature else None,
-            "nonce": self.nonce.hex() if self.nonce else None,
-        }
+    def to_json(self) -> str:
+        """JSON for debugging/logs"""
+        return json.dumps(asdict(self), indent=2)
+    
+    def sign(self, private_key_hex: str) -> 'AICPMessage':
+        """Sign message with Ed25519 private key"""
+        private_bytes = bytes.fromhex(private_key_hex)
+        signing_key = nacl.signing.SigningKey(private_bytes)
+        # Sign JSON without signature field
+        unsigned_data = {k: v for k, v in asdict(self).items() if k != 'signature'}
+        message_bytes = msgspec.json.encode(unsigned_data)
+        signed = signing_key.sign(message_bytes)
+        self.signature = base64.b64encode(signed.signature).decode()
+        return self
+    
+    def verify(self, public_key_hex: str) -> bool:
+        """Verify signature with public key"""
+        if not self.signature:
+            return False
+        public_bytes = bytes.fromhex(public_key_hex)
+        verify_key = nacl.signing.VerifyKey(public_bytes)
+        # Verify same unsigned data
+        unsigned_data = {k: v for k, v in asdict(self).items() if k != 'signature'}
+        message_bytes = msgspec.json.encode(unsigned_data)
+        try:
+            verify_key.verify(message_bytes, base64.b64decode(self.signature))
+            return True
+        except:
+            return False
+
+if __name__ == "__main__":
+    msg = AICPMessage(sender="test-agent")
+    print("✅ DIRECT TEST:", msg.to_json())

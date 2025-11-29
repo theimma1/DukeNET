@@ -1,63 +1,31 @@
-"""Tests for AICP Message Structure"""
+import sys
+import os
+# Fix Python path to find aicp module
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import pytest
-from aicp.message import Message, MessageHeader, MessageType
-
-
-def test_message_header_creation():
-    """Test message header creation with defaults"""
-    header = MessageHeader(
-        source_agent_id="agent_123",
-        destination_agent_id="agent_456"
-    )
-    
-    assert header.version == 0x01
-    assert header.message_type == MessageType.REQUEST
-    assert header.source_agent_id == "agent_123"
-    assert header.destination_agent_id == "agent_456"
-    assert header.message_id is not None
-    assert header.timestamp > 0
-
+from aicp.message import AICPMessage
 
 def test_message_serialization():
-    """Test message serialization and deserialization"""
-    header = MessageHeader(
-        source_agent_id="agent_123",
-        destination_agent_id="agent_456"
+    msg = AICPMessage(
+        sender="agent-123",
+        recipient="agent-456",
+        type="request",
+        method="task.submit",
+        payload={"data": "hello world"}
     )
     
-    body = {"action": "test", "data": [1, 2, 3]}
+    # Serialize → Deserialize roundtrip
+    binary = msg.serialize()
+    msg2 = AICPMessage.deserialize(binary)
     
-    message = Message(header=header, body=body)
+    assert msg2.sender == "agent-123"
+    assert msg2.id == msg.id  # Same UUID
+    assert msg2.payload == {"data": "hello world"}
     
-    # Serialize
-    serialized = message.serialize()
-    assert isinstance(serialized, bytes)
-    assert len(serialized) > 0
-    
-    # Deserialize
-    deserialized = Message.deserialize(serialized)
-    
-    assert deserialized.header.source_agent_id == "agent_123"
-    assert deserialized.header.destination_agent_id == "agent_456"
-    assert deserialized.body == body
+    print("✅ AICP Message serialization: PASS")
+    print(f"📦 Binary size: {len(binary)} bytes")
+    print(f"📄 JSON preview:\n{msg.to_json()}")
 
-
-def test_message_types():
-    """Test all message types"""
-    types = [
-        MessageType.REQUEST,
-        MessageType.RESPONSE,
-        MessageType.ACK,
-        MessageType.ERROR,
-        MessageType.PING,
-        MessageType.BROADCAST
-    ]
-    
-    for msg_type in types:
-        header = MessageHeader(
-            message_type=msg_type,
-            source_agent_id="test",
-            destination_agent_id="test"
-        )
-        assert header.message_type == msg_type
+if __name__ == "__main__":
+    test_message_serialization()
