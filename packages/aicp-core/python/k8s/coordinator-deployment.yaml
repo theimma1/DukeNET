@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coordinator
+  namespace: aicp
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: coordinator
+  template:
+    metadata:
+      labels:
+        app: coordinator
+    spec:
+      containers:
+      - name: coordinator
+        image: aicp-coordinator:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8000
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: coordinator
+  namespace: aicp
+spec:
+  type: LoadBalancer
+  selector:
+    app: coordinator
+  ports:
+  - port: 8000
+    targetPort: 8000
