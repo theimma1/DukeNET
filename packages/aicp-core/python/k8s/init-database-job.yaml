@@ -1,0 +1,52 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-database
+  namespace: aicp
+spec:
+  template:
+    spec:
+      containers:
+      - name: init
+        image: python:3.14-slim
+        command:
+          - /bin/bash
+          - -c
+          - |
+            pip install psycopg2-binary
+            cat <<'PYTHON' > /tmp/init_db.py
+            import psycopg2
+            conn = psycopg2.connect(
+                host='postgres.aicp.svc.cluster.local',
+                port=5432,
+                database='aicp',
+                user='aicp',
+                password='aicp_secret_k8s_secure_2025'
+            )
+            cur = conn.cursor()
+            cur.execute("""
+            CREATE TABLE IF NOT EXISTS agents (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(50) UNIQUE NOT NULL,
+                success_rate DECIMAL(5,2) DEFAULT 0.95,
+                avg_response_ms INTEGER DEFAULT 100,
+                reputation_multiplier DECIMAL(4,2) DEFAULT 1.0,
+                balance_satoshis BIGINT DEFAULT 0,
+                total_tasks INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            );
+            """)
+            agents = [('agent-1', 0.95, 50, 2.00), ('agent-2', 0.90, 100, 1.80), ('agent-3', 0.70, 200, 1.20)]
+            for name, sr, rt, rm in agents:
+                cur.execute("""
+                INSERT INTO agents (name, success_rate, avg_response_ms, reputation_multiplier)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (name) DO NOTHING
+                """, (name, sr, rt, rm))
+            conn.commit()
+            print("✅ Database initialized with 3 agents")
+            PYTHON
+            python /tmp/init_db.py
+      restartPolicy: Never
+  backoffLimit: 3

@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AICP Agent Network Dashboard</title>
+  <link href="./output.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    html {
+      overflow-y: scroll;
+      scroll-behavior: smooth;
+    }
+    
+    body { 
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+      min-height: 100vh;
+      overflow-x: hidden;
+      position: relative;
+    }
+    
+    .card { 
+      background: rgba(30, 41, 59, 0.5);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(71, 85, 105, 0.5);
+      border-radius: 1rem;
+      transition: all 0.3s ease;
+    }
+    
+    .card:hover {
+      border-color: rgba(34, 211, 238, 0.5);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(34, 211, 238, 0.15);
+    }
+    
+    .stat-card { 
+      background: linear-gradient(135deg, rgba(30, 58, 138, 0.3) 0%, rgba(30, 64, 175, 0.1) 100%);
+      border: 1px solid rgba(59, 130, 246, 0.2);
+    }
+    
+    .live-indicator { 
+      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+      box-shadow: 0 0 12px rgba(34, 197, 94, 0.6);
+    }
+    
+    @keyframes pulse { 
+      0%, 100% { opacity: 1; transform: scale(1); } 
+      50% { opacity: 0.5; transform: scale(1.1); } 
+    }
+    
+    .glow-text {
+      text-shadow: 0 0 20px rgba(56, 189, 248, 0.5);
+    }
+    
+    .status-badge {
+      animation: fadeIn 0.3s ease;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: scale(0.9); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    
+    .chart-container {
+      position: relative;
+      height: 280px;
+      width: 100%;
+    }
+    
+    canvas {
+      max-height: 280px !important;
+    }
+  </style>
+</head>
+<body class="text-slate-100">
+  <div class="min-h-screen p-4 md:p-8 pb-16">
+    <!-- Header -->
+    <div class="mb-8">
+      <div class="flex items-center gap-3 mb-2">
+        <div class="w-3 h-3 bg-green-500 rounded-full live-indicator"></div>
+        <h1 class="text-3xl md:text-5xl font-bold bg-gradient-to-r from-blue-400 via-cyan-400 to-teal-400 bg-clip-text text-transparent glow-text">
+          DukeNET AICP Network
+        </h1>
+      </div>
+      <p class="text-slate-400 text-base md:text-lg">Real-time Agent Metrics & Performance Dashboard</p>
+      <p class="text-slate-500 text-sm mt-1">Last updated: <span id="lastUpdate" class="text-cyan-400 font-mono">--:--:--</span></p>
+    </div>
+
+    <!-- Top Stats -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-6 mb-6 md:mb-8">
+      <div class="stat-card p-4 md:p-6 rounded-xl">
+        <p class="text-slate-400 text-xs md:text-sm font-medium mb-2 uppercase tracking-wide">Agents Online</p>
+        <p class="text-2xl md:text-4xl font-bold text-blue-400" id="agents">0</p>
+        <p class="text-xs text-slate-500 mt-1 md:mt-2">Connected & healthy</p>
+      </div>
+      <div class="stat-card p-4 md:p-6 rounded-xl">
+        <p class="text-slate-400 text-xs md:text-sm font-medium mb-2 uppercase tracking-wide">Total Requests</p>
+        <p class="text-2xl md:text-4xl font-bold text-cyan-400" id="requests">0</p>
+        <p class="text-xs text-slate-500 mt-1 md:mt-2">All time</p>
+      </div>
+      <div class="stat-card p-4 md:p-6 rounded-xl">
+        <p class="text-slate-400 text-xs md:text-sm font-medium mb-2 uppercase tracking-wide">Avg Latency</p>
+        <p class="text-2xl md:text-4xl font-bold text-green-400"><span id="latency">0</span><span class="text-lg md:text-2xl">ms</span></p>
+        <p class="text-xs text-slate-500 mt-1 md:mt-2">Response time</p>
+      </div>
+      <div class="stat-card p-4 md:p-6 rounded-xl">
+        <p class="text-slate-400 text-xs md:text-sm font-medium mb-2 uppercase tracking-wide">Network Health</p>
+        <p class="text-2xl md:text-4xl font-bold text-purple-400" id="trust">0.00</p>
+        <p class="text-xs text-slate-500 mt-1 md:mt-2">Avg trust score</p>
+      </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-8 mb-6 md:mb-8">
+      <!-- Requests Chart -->
+      <div class="card p-4 md:p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-base md:text-lg font-semibold text-slate-200">📊 Request Volume</h2>
+          <span class="text-xs text-slate-500 bg-slate-700/50 px-2 md:px-3 py-1 rounded-full">Last 60s</span>
+        </div>
+        <div class="chart-container">
+          <canvas id="requestsChart"></canvas>
+        </div>
+      </div>
+      <!-- Latency Chart -->
+      <div class="card p-4 md:p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-base md:text-lg font-semibold text-slate-200">⚡ Latency Trend</h2>
+          <span class="text-xs text-slate-500 bg-slate-700/50 px-2 md:px-3 py-1 rounded-full">Last 60s</span>
+        </div>
+        <div class="chart-container">
+          <canvas id="latencyChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Agents List -->
+    <div class="card p-4 md:p-6 mb-6">
+      <div class="flex items-center justify-between mb-4 md:mb-6">
+        <h2 class="text-base md:text-lg font-semibold text-slate-200">🤖 Connected Agents</h2>
+        <span class="text-xs text-slate-400"><span id="agentCount">0</span> active</span>
+      </div>
+      <div id="agentsList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
+        <div class="bg-slate-700/30 border border-slate-600 rounded-lg p-4 md:p-6 text-center text-slate-400">
+          <p class="text-base md:text-lg">No agents connected yet</p>
+          <p class="text-xs mt-2 text-slate-500">Start AICP server + connect agents</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status -->
+    <div class="text-center text-slate-500 text-sm py-4">
+      <p>WebSocket Status: <span id="wsStatus" class="text-red-400 font-semibold status-badge">Connecting...</span></p>
+    </div>
+  </div>
+
+  <script>
+    let agentsData = {};
+    let wsConnected = false;
+
+    function updateTimestamp() {
+      document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+    }
+
+    const chartDefaults = {
+      responsive: true,
+      maintainAspectRatio: true,
+      aspectRatio: 2,
+      plugins: { 
+        legend: { 
+          labels: { 
+            color: '#94a3b8',
+            font: { size: 12, weight: 'bold' }
+          } 
+        } 
+      },
+      scales: {
+        y: { 
+          grid: { color: 'rgba(100, 116, 139, 0.1)' },
+          ticks: { color: '#94a3b8', font: { size: 11 } },
+          min: 0
+        },
+        x: { 
+          grid: { color: 'rgba(100, 116, 139, 0.1)' },
+          ticks: { 
+            color: '#94a3b8',
+            font: { size: 10 },
+            maxRotation: 0,
+            autoSkip: true,
+            maxTicksLimit: 10
+          }
+        }
+      },
+      animation: {
+        duration: 0
+      }
+    };
+
+    const requestsChart = new Chart(document.getElementById('requestsChart'), {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'Requests/sec',
+          data: [],
+          borderColor: '#22d3ee',
+          backgroundColor: 'rgba(34, 211, 238, 0.1)',
+          borderWidth: 2,
+          fill: true,
+          tension: 0.4,
+          pointBackgroundColor: '#22d3ee',
+          pointBorderColor: '#0e7490',
+          pointRadius: 2,
+          pointHoverRadius: 5
+        }]
+      },
+      options: chartDefaults
+    });
+
+    const latencyChart = new Chart(document.getElementById('latencyChart'), {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'Latency (ms)',
+          data: [],
+          borderColor: '#10b981',
+          backgroundColor: 'rgba(16, 185, 129, 0.1)',
+          borderWidth: 2,
+          fill: true,
+          tension: 0.4,
+          pointBackgroundColor: '#10b981',
+          pointBorderColor: '#059669',
+          pointRadius: 2,
+          pointHoverRadius: 5
+        }]
+      },
+      options: chartDefaults
+    });
+
+    function updatePanel(data) {
+      updateTimestamp();
+      
+      document.getElementById('agents').textContent = data.agents || 0;
+      document.getElementById('requests').textContent = data.total_requests || 0;
+      document.getElementById('latency').textContent = Math.round((data.avg_latency || 0) * 1000);
+      document.getElementById('trust').textContent = (data.avg_trust || 0).toFixed(2);
+
+      const now = new Date().toLocaleTimeString('en-US', { 
+        hour12: false, 
+        hour: '2-digit', 
+        minute: '2-digit', 
+        second: '2-digit' 
+      });
+      
+      requestsChart.data.labels.push(now);
+      requestsChart.data.datasets[0].data.push(data.total_requests || 0);
+      
+      latencyChart.data.labels.push(now);
+      latencyChart.data.datasets[0].data.push(Math.round((data.avg_latency || 0) * 1000));
+
+      if (requestsChart.data.labels.length > 60) {
+        requestsChart.data.labels.shift();
+        requestsChart.data.datasets[0].data.shift();
+        latencyChart.data.labels.shift();
+        latencyChart.data.datasets[0].data.shift();
+      }
+
+      requestsChart.update('none');
+      latencyChart.update('none');
+    }
+
+    async function fetchAgentsList() {
+      try {
+        const res = await fetch('/api/metrics/agents');
+        if (!res.ok) return;
+        const agents = await res.json();
+        agentsData = agents;
+        renderAgentsList();
+      } catch (e) {
+        console.log('Agents fetch pending...');
+      }
+    }
+
+    function renderAgentsList() {
+      const container = document.getElementById('agentsList');
+      const count = Object.keys(agentsData).length;
+      document.getElementById('agentCount').textContent = count;
+      
+      if (count === 0) {
+        container.innerHTML = `
+          <div class="bg-slate-700/30 border border-slate-600 rounded-lg p-4 md:p-6 text-center text-slate-400 col-span-3">
+            <p class="text-base md:text-lg">No agents connected yet</p>
+            <p class="text-xs mt-2 text-slate-500">Start AICP server + connect agents</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = Object.entries(agentsData).map(([id, metrics]) => {
+        const trustScore = metrics.trust_score || 0;
+        const successRate = (metrics.success_rate || 0) * 100;
+        const trustColor = trustScore > 0.8 ? 'green' : trustScore > 0.5 ? 'yellow' : 'red';
+        
+        return `
+          <div class="bg-slate-700/30 border border-slate-600 hover:border-cyan-500/50 rounded-lg p-4 md:p-5 transition-all duration-300">
+            <div class="flex items-center justify-between mb-3">
+              <p class="font-semibold text-sm text-cyan-400 truncate" title="${id}">${id}</p>
+              <span class="px-2 py-1 bg-green-500/20 border border-green-500/50 rounded text-xs text-green-400 font-bold">LIVE</span>
+            </div>
+            <div class="space-y-2 text-xs">
+              <div class="flex justify-between items-center">
+                <span class="text-slate-400">Trust Score:</span>
+                <span class="text-${trustColor}-400 font-bold">${trustScore.toFixed(2)}</span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-slate-400">Success Rate:</span>
+                <span class="text-green-400 font-bold">${successRate.toFixed(1)}%</span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-slate-400">Avg Latency:</span>
+                <span class="text-yellow-400 font-bold">${Math.round((metrics.avg_latency || 0) * 1000)}ms</span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-slate-400">Requests:</span>
+                <span class="text-purple-400 font-bold">${metrics.request_count || 0}</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    fetch('/api/metrics/summary').then(r => r.json()).then(updatePanel).catch(e => console.log('Initial fetch pending...'));
+    fetchAgentsList();
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/ws/metrics`;
+    const ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => {
+      wsConnected = true;
+      document.getElementById('wsStatus').textContent = 'Connected';
+      document.getElementById('wsStatus').className = 'text-green-400 font-semibold status-badge';
+    };
+
+    ws.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+      updatePanel(data);
+      fetchAgentsList();
+    };
+
+    ws.onerror = () => {
+      document.getElementById('wsStatus').textContent = 'Connection Error';
+      document.getElementById('wsStatus').className = 'text-red-400 font-semibold status-badge';
+    };
+
+    ws.onclose = () => {
+      wsConnected = false;
+      document.getElementById('wsStatus').textContent = 'Disconnected';
+      document.getElementById('wsStatus').className = 'text-red-400 font-semibold status-badge';
+      setTimeout(() => location.reload(), 5000);
+    };
+  </script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aicp
+  labels:
+    app: aicp-core
+    environment: production

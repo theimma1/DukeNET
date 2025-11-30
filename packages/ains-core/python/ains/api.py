@@ -58,7 +58,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../../aicp-core/p
 
 
 
-from aicp import KeyPair  # Optional for signature/data management
+# from aicp import KeyPair  # Optional for signature/data management
 from .db import Agent, AgentTag, Capability, TrustRecord, Task, get_db, create_tables
 from .cache import cache
 from .trust import calculate_trust_score, update_trust_score

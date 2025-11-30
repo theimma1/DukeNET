@@ -285,7 +285,7 @@ class AuditLog(Base):
     error_message = Column(String(512), nullable=True)
     
     # Additional data
-    extra_metadata = Column(JSON, default=dict)
+    extra_task_metadata = Column(JSON, default=dict)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     __table_args__ = (
@@ -389,7 +389,7 @@ class ScheduledTask(Base):
     failed_runs = Column(Integer, default=0)
     
     # Metadata
-    metadata = Column(JSON, nullable=True)
+    task_metadata = Column(JSON, nullable=True)
 
     def __repr__(self):
         return f"<Task(task_id='{self.task_id}', status='{self.status}', type='{self.task_type}')>"
@@ -538,7 +538,7 @@ class AuditLog(Base):
     user_agent = Column(String(512), nullable=True)
     success = Column(Boolean, default=False)
     error_message = Column(String(512), nullable=True)
-    extra_metadata = Column(JSON, nullable=True)
+    extra_task_metadata = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False, index=True)
     
     __table_args__ = (
