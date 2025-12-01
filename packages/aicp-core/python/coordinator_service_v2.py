@@ -4,9 +4,8 @@ FastAPI backend with SQLite database and JWT authentication
 """
 
 
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends, status, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from datetime import datetime, timedelta
@@ -480,7 +479,7 @@ async def complete_task(task_id: str, completion: TaskCompletion, agent: TokenDa
 
 @app.get("/dashboard", tags=["Dashboard"])
 async def dashboard(db: Session = Depends(get_db)):
-    """Real-time dashboard (no auto-refresh)"""
+    """Static dashboard - manual refresh only"""
     # Calculate metrics
     total_tasks = db.query(Task).count()
     completed_tasks = db.query(Task).filter(Task.status == "completed").count()
@@ -527,6 +526,9 @@ async def dashboard(db: Session = Depends(get_db)):
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+        <meta http-equiv="Pragma" content="no-cache">
+        <meta http-equiv="Expires" content="0">
         <title>AICP Dashboard</title>
         <style>
             * {{ margin: 0; padding: 0; box-sizing: border-box; }}
@@ -686,7 +688,15 @@ async def dashboard(db: Session = Depends(get_db)):
     </html>
     """
     
-    return HTMLResponse(content=html)
+    return Response(
+        content=html, 
+        media_type="text/html",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+    )
 
 
 # ==================== RUN SERVER ====================
