@@ -66,8 +66,8 @@ RETRY_DELAY = 2
 
 # ==================== DATABASE SETUP ====================
 
-DATABASE_URL = "sqlite:///./aicp.db"
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+DATABASE_URL = "postgresql://localhost:5432/duke_ml_production"
+engine = create_engine(DATABASE_URL, pool_size=20, max_overflow=40)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
