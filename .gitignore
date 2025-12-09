@@ -49,3 +49,6 @@ todo-list.html
 *.db
 *.sqlite
 packages/ains-core/python/data/
+*.jsonl
+*.log
+backups/
