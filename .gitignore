@@ -52,3 +52,4 @@ packages/ains-core/python/data/
 *.jsonl
 *.log
 backups/
+DukeNET/
