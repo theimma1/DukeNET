@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DukeNET Architecture</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom scrollbar for a better look on dark theme */
+        body::-webkit-scrollbar {
+            width: 8px;
+        }
+        body::-webkit-scrollbar-track {
+            background: #1e293b; /* slate-800 */
+        }
+        body::-webkit-scrollbar-thumb {
+            background: #3b82f6; /* blue-500 */
+            border-radius: 4px;
+        }
+        
+        /* Ensure the body and html take full height for the gradient */
+        html, body {
+            height: 100%;
+            margin: 0;
+            overflow-y: auto;
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 min-h-screen p-8">
+
+    <div id="app-container" class="max-w-7xl mx-auto">
+        <!-- The entire application will be rendered here by JavaScript -->
+        <div id="content-container"></div>
+
+        <!-- Detail Modal Container -->
+        <div id="detail-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-8 z-50 hidden">
+            <!-- Modal content will be inserted here by JavaScript -->
+        </div>
+    </div>
+
+    <script>
+        // --- Data Structure ---
+        const layers = [
+            {
+                id: 'protocol',
+                name: 'Protocol Layer',
+                color: 'bg-blue-500',
+                components: [
+                    {
+                        name: 'AICP',
+                        fullName: 'AI Communication Protocol',
+                        icon: 'Network',
+                        description: 'Standardized agent-to-agent messaging with <50ms latency, 100K+ msg/sec throughput',
+                        features: ['mTLS encryption', 'Ed25519 signatures', 'Rate limiting', 'Message replay prevention']
+                    },
+                    {
+                        name: 'AINS',
+                        fullName: 'AI Naming System',
+                        icon: 'Database',
+                        description: 'Global directory for agent identity, capability discovery, and trust scoring',
+                        features: ['Hierarchical naming', 'Semantic search', 'Trust scoring', 'Capability matching']
+                    },
+                    {
+                        name: 'AITP',
+                        fullName: 'AI Task Protocol',
+                        icon: 'Zap',
+                        description: 'Orchestrates complex multi-step tasks with decomposition and error recovery',
+                        features: ['Task decomposition', 'Parallel execution', 'Progress tracking', 'Automatic retry']
+                    }
+                ]
+            },
+            {
+                id: 'runtime',
+                name: 'Runtime & Infrastructure',
+                color: 'bg-purple-500',
+                components: [
+                    {
+                        name: 'AgentOS',
+                        fullName: 'Agent Operating System',
+                        icon: 'Cpu',
+                        description: 'Runtime environment with memory management, skill registry, and resource allocation',
+                        features: ['Multi-language support', 'Memory layers', 'Skill registry', 'Authentication']
+                    },
+                    {
+                        name: 'Node Network',
+                        fullName: 'Distributed Compute',
+                        icon: 'Server',
+                        description: 'Distributed infrastructure with cloud, edge, and home nodes',
+                        features: ['3-tier architecture', 'Load balancing', 'Sandboxed execution', '70/30 revenue split']
+                    }
+                ]
+            },
+            {
+                id: 'economic',
+                name: 'Economic Layer',
+                color: 'bg-green-500',
+                components: [
+                    {
+                        name: 'Marketplace',
+                        fullName: 'AINet Marketplace',
+                        icon: 'DollarSign',
+                        description: 'App store for AI agents with transactions, revenue sharing, and quality assurance',
+                        features: ['Agent marketplace', 'Skill marketplace', 'Data marketplace', 'Compute marketplace']
+                    }
+                ]
+            }
+        ];
+
+        const dukeAgent = {
+            name: 'Labelee Duke',
+            icon: 'Users',
+            description: 'Flagship orchestrator agent serving as the user interface and demonstration of AINet capabilities',
+            features: ['Natural language understanding', 'Multi-agent orchestration', 'Task decomposition', 'Real-time learning']
+        };
+
+        // --- Utility Functions ---
+
+        // Helper to get Lucide icon SVGs (minified for a single file)
+        function getIconSVG(name, classes) {
+            const svgPaths = {
+                Network: '<path d="M12 1v4"/><path d="M12 9v4"/><path d="M12 17v4"/><path d="M5 9h4"/><path d="M15 9h4"/><path d="M5 17h4"/><path d="M15 17h4"/><path d="M12 5a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/><path d="M12 13a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/><path d="M12 21a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/><path d="M5 9a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/><path d="M19 9a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/><path d="M5 17a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/><path d="M19 17a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/>',
+                Database: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/>',
+                Zap: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
+                Cpu: '<rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M20 8h-2"/><path d="M20 12h-2"/><path d="M20 16h-2"/><path d="M4 8h2"/><path d="M4 12h2"/><path d="M4 16h2"/><path d="M8 20v-2"/><path d="M12 20v-2"/><path d="M16 20v-2"/><path d="M8 4v2"/><path d="M12 4v2"/><path d="M16 4v2"/>',
+                Server: '<rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01"/><path d="M6 18h.01"/>',
+                DollarSign: '<path d="M12 2h3a3 3 0 0 1 0 6H7a3 3 0 0 0 0 6h5a3 3 0 0 1 0 6H9"/><line x1="12" x2="12" y1="22" y2="2"/>',
+                Users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+                Code: '<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>',
+                Shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+                Cloud: '<path d="M17.5 19.4H8a5 5 0 1 1 3.9-8"/><path d="M19 14.7H13.1c-.6 0-1.2.4-1.4 1-.3.8-.2 1.8.3 2.5.4.6.9.9 1.5.9h.4c.5 0 .9.2 1.2.6.4.4.6.9.6 1.5v.1"/>'
+            };
+            const pathData = svgPaths[name] || '';
+            return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="${classes}">${pathData}</svg>`;
+        }
+
+        // --- Component Rendering Functions ---
+
+        function renderLayerComponent(component, layer) {
+            const Icon = getIconSVG(component.icon, 'w-8 h-8 text-blue-400');
+            
+            const featuresHTML = component.features.slice(0, 2).map((feature) => `
+                <span class="text-xs bg-slate-600 text-slate-200 px-2 py-1 rounded">
+                    ${feature}
+                </span>
+            `).join('');
+
+            const moreFeatures = component.features.length > 2 ? `
+                <span class="text-xs bg-blue-600 text-white px-2 py-1 rounded">
+                    +${component.features.length - 2} more
+                </span>
+            ` : '';
+
+            return `
+                <div 
+                    class="bg-slate-700 rounded-lg p-5 border-2 border-slate-600 hover:border-blue-400 transition-all cursor-pointer hover:scale-105"
+                    data-component-name="${component.name}"
+                >
+                    <div class="flex items-center gap-3 mb-3">
+                        ${Icon}
+                        <div>
+                            <h3 class="text-white font-bold text-lg">${component.name}</h3>
+                            <p class="text-xs text-slate-400">${component.fullName}</p>
+                        </div>
+                    </div>
+                    <p class="text-sm text-slate-300 mb-3">${component.description}</p>
+                    <div class="flex flex-wrap gap-2">
+                        ${featuresHTML}
+                        ${moreFeatures}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderLayer(layer, index) {
+            const numComponents = layer.components.length;
+            // Use 1 column for mobile, and up to 3 for larger screens
+            const gridCols = Math.min(numComponents, 3);
+            
+            const componentsHTML = layer.components.map(component => 
+                renderLayerComponent(component, layer)
+            ).join('');
+
+            return `
+                <div class="relative">
+                    <!-- Layer Header -->
+                    <div class="${layer.color} text-white px-6 py-3 rounded-t-xl font-bold text-lg flex items-center justify-between">
+                        <span>Layer ${index + 1}: ${layer.name}</span>
+                        <span class="text-sm opacity-75">${numComponents} Components</span>
+                    </div>
+                    
+                    <!-- Components Grid -->
+                    <div class="bg-slate-800 rounded-b-xl p-6 grid grid-cols-1 md:grid-cols-${gridCols} gap-4">
+                        ${componentsHTML}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderDukeAgent() {
+            const Icon = getIconSVG(dukeAgent.icon, 'w-12 h-12 text-orange-600');
+            const featuresHTML = dukeAgent.features.map(feature => `
+                <div class="flex items-center gap-2 text-white">
+                    <div class="w-2 h-2 bg-amber-200 rounded-full"></div>
+                    <span class="text-sm">${feature}</span>
+                </div>
+            `).join('');
+
+            return `
+                <div class="mt-8 bg-gradient-to-r from-amber-600 to-orange-600 rounded-xl p-6 border-4 border-amber-400">
+                    <div class="flex flex-col md:flex-row items-start gap-4">
+                        <div class="bg-white rounded-full p-4 flex-shrink-0">
+                            ${Icon}
+                        </div>
+                        <div class="flex-1">
+                            <h2 class="text-3xl font-bold text-white mb-2">${dukeAgent.name}</h2>
+                            <p class="text-amber-100 mb-4">${dukeAgent.description}</p>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                ${featuresHTML}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderWorkflow() {
+            const flowSteps = [
+                { id: 'user_start', title: 'User/Agent Input', color: 'bg-indigo-600', icon: 'Users', description: 'Initiates a request via chat, API, or from another agent.' },
+                { id: 'request_agent', title: 'Labelee Duke Agent', color: 'bg-orange-600', icon: 'Users', description: 'Receives request, analyzes intent, and orchestrates the task.' },
+                { id: 'orchestration', title: 'Task Decomposition (AITP)', color: 'bg-yellow-600', icon: 'Zap', description: 'Breaks the task into parallel sub-tasks and queries AINS for capability matching.' },
+                { id: 'communication', title: 'Secure Dispatch (AICP)', color: 'bg-blue-600', icon: 'Network', description: 'Encrypts, signs, and dispatches sub-tasks securely to the optimal Agent Nodes.' },
+                { id: 'execution', title: 'Agent Node Network', color: 'bg-purple-600', icon: 'Server', description: 'Sub-tasks are executed in sandboxed environments by specialized agents (via AgentOS).' },
+                { id: 'synthesis', title: 'Result Synthesis (AITP)', color: 'bg-green-600', icon: 'Code', description: 'Duke Agent gathers sub-results (via AICP) and aggregates them into the final, coherent outcome.' },
+                { id: 'user_end', title: 'Final Result Delivery', color: 'bg-indigo-600', icon: 'Users', description: 'Delivers the completed, synthesized outcome back to the original requestor.' },
+            ];
+
+            const flowchartIcon = getIconSVG('Zap', 'w-8 h-8 text-yellow-400');
+
+            const stepsHTML = flowSteps.map((step, index) => {
+                const Icon = getIconSVG(step.icon, 'w-8 h-8 text-white');
+                
+                // FIXED: Increased height from h-40 to h-48 to accommodate longer descriptions
+                const box = `
+                    <div class="${step.color} rounded-xl p-5 shadow-2xl transition-shadow duration-300 hover:shadow-blue-500/50 min-w-[220px] max-w-[220px] flex-shrink-0 h-48 flex flex-col justify-between">
+                        <div class="flex items-center gap-3">
+                            ${Icon}
+                            <h3 class="text-lg font-bold text-white">${step.title}</h3>
+                        </div>
+                        <p class="text-xs text-white opacity-90">${step.description}</p>
+                    </div>
+                `;
+                
+                let arrow = '';
+                if (index < flowSteps.length - 1) {
+                    let arrowText = '';
+                    let arrowColor = '';
+                    
+                    if (index === 0) { arrowText = 'Task Request'; arrowColor = 'bg-blue-500'; }
+                    else if (index === 1) { arrowText = 'AITP Decomposition + AINS Lookup'; arrowColor = 'bg-yellow-500'; }
+                    else if (index === 2) { arrowText = 'Sub-Task Dispatch (AICP)'; arrowColor = 'bg-blue-500'; }
+                    else if (index === 3) { arrowText = 'Execution on Nodes'; arrowColor = 'bg-purple-500'; }
+                    else if (index === 4) { arrowText = 'Sub-Task Results (AICP)'; arrowColor = 'bg-blue-500'; }
+                    else if (index === 5) { arrowText = 'Result Aggregation'; arrowColor = 'bg-green-500'; }
+                    
+                    arrow = `
+                        <!-- Desktop Arrow -->
+                        <div class="hidden md:flex items-center justify-center w-32 relative flex-shrink-0">
+                            <div class="w-full h-1 bg-slate-700 relative rounded-full">
+                                <span class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 ${arrowColor} text-white font-semibold text-xs px-3 py-1 rounded-full whitespace-nowrap shadow-md">${arrowText}</span>
+                                <svg class="w-5 h-5 absolute right-0 top-1/2 transform -translate-y-1/2 translate-x-1/2 text-slate-700" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd"></path></svg>
+                            </div>
+                        </div>
+                        <!-- Mobile Arrow -->
+                        <div class="md:hidden flex flex-col items-center justify-center w-full py-4">
+                            <div class="w-1 h-8 bg-slate-700 relative rounded-full"></div>
+                            <span class="${arrowColor} text-white font-semibold text-xs px-3 py-1 rounded-full my-2 whitespace-nowrap shadow-md">${arrowText}</span>
+                            <div class="w-1 h-8 bg-slate-700 relative rounded-full"></div>
+                        </div>
+                    `;
+                }
+
+                return box + arrow;
+            }).join('');
+
+            return `
+                <div class="mt-16 mb-12">
+                    <h2 class="text-3xl font-bold text-white mb-6 flex items-center gap-3">
+                        ${flowchartIcon}
+                        DukeNET Agent Workflow: The Execution Pipeline
+                    </h2>
+                    <p class="text-slate-300 mb-8">This flowchart illustrates how the core DukeNET protocols (AITP, AINS, AICP) work together with the Labelee Duke Agent to securely decompose, execute, and synthesize complex tasks.</p>
+                    
+                    <!-- Horizontal scroll container for the flowchart -->
+                    <div class="flex flex-col md:flex-row items-stretch justify-start space-y-4 md:space-y-0 md:space-x-0 overflow-x-auto p-4 bg-slate-800 rounded-xl shadow-inner border border-slate-700">
+                        ${stepsHTML}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderComparisonTable() {
+            const tableData = [
+                ['TCP/IP', 'AICP', 'Standard communication protocol'],
+                ['DNS', 'AINS', 'Agent identity and discovery'],
+                ['HTTP', 'AITP', 'Task request/response protocol'],
+                ['Web Browser', 'Agent Hub', 'User interface layer'],
+                ['Web Server', 'Agent Node', 'Service provider runtime'],
+                ['App Store', 'AINet Marketplace', 'Distribution and monetization']
+            ];
+
+            const rowsHTML = tableData.map(row => `
+                <div class="text-slate-300 bg-slate-700 p-3 rounded text-sm">${row[0]}</div>
+                <div class="text-slate-300 bg-slate-700 p-3 rounded font-semibold text-sm">${row[1]}</div>
+                <div class="text-slate-400 bg-slate-700 p-3 rounded text-sm">${row[2]}</div>
+            `).join('');
+
+            const CodeIcon = getIconSVG('Code', 'w-6 h-6 text-blue-400');
+
+            return `
+                <div class="bg-slate-800 rounded-xl p-6 mb-8">
+                    <h2 class="text-2xl font-bold text-white mb-4 flex items-center gap-3">
+                        ${CodeIcon}
+                        Traditional Internet vs AI Internet
+                    </h2>
+                    <div class="grid grid-cols-3 gap-4">
+                        <div class="font-bold text-blue-400 text-sm p-3">Traditional Internet</div>
+                        <div class="font-bold text-purple-400 text-sm p-3">AI Internet (DukeNET)</div>
+                        <div class="font-bold text-green-400 text-sm p-3">Purpose</div>
+                        ${rowsHTML}
+                    </div>
+                </div>
+            `;
+        }
+        
+        function renderKeyMetrics() {
+            const metrics = [
+                { icon: 'Shield', value: '<50ms', description: 'Message Latency (p99)', color: 'from-blue-600 to-blue-800' },
+                { icon: 'Zap', value: '100K+', description: 'Messages/sec per node', color: 'from-purple-600 to-purple-800' },
+                { icon: 'Cloud', value: '99.9%', description: 'Uptime SLA', color: 'from-green-600 to-green-800' },
+            ];
+
+            const metricsHTML = metrics.map(metric => {
+                const Icon = getIconSVG(metric.icon, 'w-10 h-10 mb-3 opacity-75');
+                return `
+                    <div class="bg-gradient-to-br ${metric.color} rounded-xl p-6 text-white">
+                        ${Icon}
+                        <div class="text-3xl font-bold mb-1">${metric.value}</div>
+                        <div class="text-sm opacity-90">${metric.description}</div>
+                    </div>
+                `;
+            }).join('');
+
+            return `<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">${metricsHTML}</div>`;
+        }
+
+
+        // --- Main Rendering and Event Handling ---
+
+        function renderArchitecture() {
+            const container = document.getElementById('content-container');
+
+            // Header
+            let html = `
+                <div class="text-center mb-12">
+                    <h1 class="text-5xl font-bold text-white mb-4">DukeNET Architecture</h1>
+                    <p class="text-xl text-blue-200 mb-2">The AI Internet Infrastructure</p>
+                    <p class="text-sm text-slate-300 italic">Building the foundational layer where AI agents communicate, collaborate, and transact</p>
+                </div>
+            `;
+            
+            // TITLE BLOCK for the component layers (The System Architecture Diagram)
+            html += `
+                <div class="mb-6">
+                    <h2 class="text-3xl font-bold text-white border-b-2 border-blue-500 pb-2 flex items-center gap-3">
+                        ${getIconSVG('Cloud', 'w-7 h-7 text-blue-400')}
+                        System Architecture: Layered Components
+                    </h2>
+                    <p class="text-slate-400 mt-2">The DukeNET foundation is built on three vertically integrated layers of protocols and infrastructure.</p>
+                </div>
+            `;
+
+            // Main Architecture Diagram (Layers)
+            html += '<div class="relative mb-12"><div class="space-y-6">';
+            html += layers.map((layer, idx) => renderLayer(layer, idx)).join('');
+            html += '</div>';
+
+            // Duke Agent
+            html += renderDukeAgent();
+            html += '</div>';
+
+            // Workflow Diagram (Flowchart)
+            html += renderWorkflow();
+            
+            // Comparison Table
+            html += renderComparisonTable();
+
+            // Key Metrics
+            html += renderKeyMetrics();
+
+            container.innerHTML = html;
+        }
+
+        function findComponent(name) {
+            for (const layer of layers) {
+                const component = layer.components.find(c => c.name === name);
+                if (component) return component;
+            }
+            return null;
+        }
+        
+        function openModal(component) {
+            const modal = document.getElementById('detail-modal');
+            const Icon = getIconSVG(component.icon, 'w-12 h-12 text-blue-400');
+
+            const featuresHTML = component.features.map((feature, i) => `
+                <div class="flex items-start gap-3 text-slate-300">
+                    <div class="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
+                        <span class="text-white text-sm font-bold">${i + 1}</span>
+                    </div>
+                    <span>${feature}</span>
+                </div>
+            `).join('');
+
+            modal.innerHTML = `
+                <div 
+                    class="bg-slate-800 rounded-xl p-8 max-w-2xl w-full max-h-[80vh] overflow-auto shadow-2xl transform transition-all duration-300 scale-100"
+                    id="modal-content"
+                    onclick="event.stopPropagation()"
+                >
+                    <div class="flex items-center gap-4 mb-6">
+                        ${Icon}
+                        <div>
+                            <h2 class="text-3xl font-bold text-white">${component.name}</h2>
+                            <p class="text-slate-400">${component.fullName}</p>
+                        </div>
+                    </div>
+                    
+                    <p class="text-slate-300 mb-6 text-lg">${component.description}</p>
+                    
+                    <h3 class="text-xl font-bold text-white mb-4">Key Features:</h3>
+                    <div class="space-y-3">
+                        ${featuresHTML}
+                    </div>
+                    
+                    <button
+                        onclick="closeModal()"
+                        class="mt-8 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition-colors shadow-lg hover:shadow-xl"
+                    >
+                        Close
+                    </button>
+                </div>
+            `;
+            modal.classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('detail-modal').classList.add('hidden');
+        }
+
+        function handleComponentClick(event) {
+            let target = event.target;
+            // Traverse up the DOM until the component card is found
+            while (target && !target.dataset.componentName && target !== document.body) {
+                target = target.parentElement;
+            }
+
+            if (target && target.dataset.componentName) {
+                const componentName = target.dataset.componentName;
+                const component = findComponent(componentName);
+                if (component) {
+                    openModal(component);
+                }
+            }
+        }
+        
+        // --- Initialization ---
+        window.onload = function() {
+            renderArchitecture();
+            
+            // Event listener for the entire content container to handle component clicks (delegation)
+            document.getElementById('content-container').addEventListener('click', handleComponentClick);
+            
+            // Event listener for the modal backdrop
+            document.getElementById('detail-modal').addEventListener('click', closeModal);
+        };
+        
+        // Expose functions globally for HTML event handlers
+        window.openModal = openModal;
+        window.closeModal = closeModal;
+
+    </script>
+</body>
+</html>

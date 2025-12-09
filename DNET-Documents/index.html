@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DukeNET Documentation Hub</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #0f0f23;
+            color: #e4e4e7;
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+        
+        .navbar {
+            background: rgba(15, 15, 35, 0.95);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(139, 92, 246, 0.2);
+            padding: 20px 40px;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+        }
+        
+        .navbar-content {
+            max-width: 1600px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 30px;
+            flex-wrap: wrap;
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .logo-icon {
+            font-size: 32px;
+            background: linear-gradient(135deg, #8b5cf6, #ec4899);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .logo-text h1 {
+            font-size: 24px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #8b5cf6, #ec4899);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .logo-text p {
+            font-size: 12px;
+            color: #a1a1aa;
+            margin-top: 2px;
+        }
+        
+        .search-container {
+            flex: 1;
+            max-width: 600px;
+            position: relative;
+        }
+        
+        .search-wrapper {
+            position: relative;
+        }
+        
+        .search-icon {
+            position: absolute;
+            left: 18px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #71717a;
+            font-size: 18px;
+        }
+        
+        .search-box {
+            width: 100%;
+            padding: 14px 20px 14px 50px;
+            background: rgba(39, 39, 42, 0.6);
+            border: 2px solid rgba(139, 92, 246, 0.3);
+            border-radius: 12px;
+            color: #e4e4e7;
+            font-size: 15px;
+            transition: all 0.3s ease;
+        }
+        
+        .search-box:focus {
+            outline: none;
+            background: rgba(39, 39, 42, 0.9);
+            border-color: #8b5cf6;
+            box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.1);
+        }
+        
+        .search-box::placeholder {
+            color: #71717a;
+        }
+        
+        .stats-bar {
+            background: rgba(24, 24, 27, 0.6);
+            padding: 30px 40px;
+            border-bottom: 1px solid rgba(139, 92, 246, 0.1);
+        }
+        
+        .stats-container {
+            max-width: 1600px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 30px;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(236, 72, 153, 0.1));
+            border: 1px solid rgba(139, 92, 246, 0.2);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-2px);
+            border-color: rgba(139, 92, 246, 0.4);
+            box-shadow: 0 8px 30px rgba(139, 92, 246, 0.2);
+        }
+        
+        .stat-value {
+            font-size: 36px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #8b5cf6, #ec4899);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 5px;
+        }
+        
+        .stat-label {
+            color: #a1a1aa;
+            font-size: 14px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .filters-section {
+            padding: 30px 40px;
+            background: rgba(24, 24, 27, 0.3);
+            border-bottom: 1px solid rgba(139, 92, 246, 0.1);
+        }
+        
+        .filters-container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+        
+        .filters-label {
+            color: #a1a1aa;
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        
+        .sort-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-left: auto;
+        }
+        
+        .sort-label {
+            color: #a1a1aa;
+            font-size: 13px;
+        }
+        
+        .sort-select {
+            padding: 8px 15px;
+            background: rgba(39, 39, 42, 0.6);
+            border: 1px solid rgba(139, 92, 246, 0.2);
+            border-radius: 8px;
+            color: #e4e4e7;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .sort-select:hover {
+            background: rgba(139, 92, 246, 0.2);
+            border-color: #8b5cf6;
+        }
+        
+        .sort-select:focus {
+            outline: none;
+            border-color: #8b5cf6;
+        }
+        
+        .filters {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .filter-btn {
+            padding: 10px 20px;
+            background: rgba(39, 39, 42, 0.6);
+            border: 1px solid rgba(139, 92, 246, 0.2);
+            border-radius: 8px;
+            color: #e4e4e7;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 14px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .filter-btn:hover {
+            background: rgba(139, 92, 246, 0.2);
+            border-color: #8b5cf6;
+            transform: translateY(-2px);
+        }
+        
+        .filter-btn.active {
+            background: linear-gradient(135deg, #8b5cf6, #ec4899);
+            border-color: transparent;
+            color: white;
+            box-shadow: 0 4px 15px rgba(139, 92, 246, 0.4);
+        }
+        
+        .content {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 40px;
+        }
+        
+        .category-section {
+            margin-bottom: 50px;
+            animation: fadeIn 0.5s ease;
+        }
+        
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .category-header {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid rgba(139, 92, 246, 0.3);
+        }
+        
+        .category-icon {
+            font-size: 28px;
+        }
+        
+        .category-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: #e4e4e7;
+        }
+        
+        .category-count {
+            margin-left: auto;
+            padding: 6px 16px;
+            background: rgba(139, 92, 246, 0.2);
+            border-radius: 20px;
+            color: #c4b5fd;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        
+        .file-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 20px;
+        }
+        
+        .file-card {
+            background: rgba(24, 24, 27, 0.6);
+            border: 1px solid rgba(139, 92, 246, 0.2);
+            border-radius: 12px;
+            padding: 24px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .file-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #8b5cf6, #ec4899);
+            transform: scaleX(0);
+            transition: transform 0.3s ease;
+        }
+        
+        .file-card:hover::before {
+            transform: scaleX(1);
+        }
+        
+        .file-card:hover {
+            transform: translateY(-5px);
+            background: rgba(24, 24, 27, 0.9);
+            border-color: #8b5cf6;
+            box-shadow: 0 12px 40px rgba(139, 92, 246, 0.3);
+        }
+        
+        .file-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+        
+        .file-name {
+            font-size: 16px;
+            font-weight: 600;
+            color: #e4e4e7;
+            margin-bottom: 12px;
+            word-break: break-word;
+            line-height: 1.4;
+        }
+        
+        .file-source {
+            display: inline-block;
+            padding: 4px 12px;
+            background: rgba(139, 92, 246, 0.15);
+            border-radius: 6px;
+            color: #c4b5fd;
+            font-size: 12px;
+            font-weight: 500;
+            margin-bottom: 12px;
+        }
+        
+        .file-meta {
+            display: flex;
+            justify-content: space-between;
+            padding-top: 15px;
+            border-top: 1px solid rgba(139, 92, 246, 0.1);
+            color: #a1a1aa;
+            font-size: 13px;
+        }
+        
+        .no-results {
+            text-align: center;
+            padding: 100px 20px;
+            color: #71717a;
+        }
+        
+        .no-results-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+        
+        .no-results h3 {
+            font-size: 24px;
+            color: #a1a1aa;
+            margin-bottom: 10px;
+        }
+        
+        .no-results p {
+            font-size: 16px;
+        }
+        
+        @media (max-width: 768px) {
+            .navbar {
+                padding: 15px 20px;
+            }
+            
+            .navbar-content {
+                flex-direction: column;
+                gap: 15px;
+            }
+            
+            .search-container {
+                width: 100%;
+                max-width: 100%;
+            }
+            
+            .stats-container {
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                gap: 15px;
+            }
+            
+            .file-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .content {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <div class="navbar-content">
+            <div class="logo">
+                <div class="logo-icon">📚</div>
+                <div class="logo-text">
+                    <h1>DukeNET Docs</h1>
+                    <p>Documentation Hub • <span id="updateStatus">Updated Dec 06, 2025 07:39 AM</span></p>
+                </div>
+            </div>
+            
+            <div class="search-container">
+                <div class="search-wrapper">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" class="search-box" id="searchBox" placeholder="Search files by name, type, or source...">
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="stats-bar">
+        <div class="stats-container">
+            <div class="stat-card">
+                <div class="stat-value" id="totalFiles">80</div>
+                <div class="stat-label">Total Files</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="totalSize">1.9 MB</div>
+                <div class="stat-label">Total Size</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="totalCategories">5</div>
+                <div class="stat-label">Categories</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">Dec 06</div>
+                <div class="stat-label">Last Updated</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="filters-section">
+        <div class="filters-container">
+            <div class="filters-label">
+                <span>Filter by Category</span>
+                <div class="sort-controls">
+                    <span class="sort-label">Sort by:</span>
+                    <select class="sort-select" id="sortSelect">
+                        <option value="newest">Newest First</option>
+                        <option value="oldest">Oldest First</option>
+                        <option value="name-asc">Name (A-Z)</option>
+                        <option value="name-desc">Name (Z-A)</option>
+                        <option value="size-desc">Largest First</option>
+                        <option value="size-asc">Smallest First</option>
+                    </select>
+                </div>
+            </div>
+            <div class="filters" id="filters"></div>
+        </div>
+    </div>
+    
+    <div class="content" id="content"></div>
+    
+    <script>
+        const documents = [{"name": "AICP_Project_Completion_Report.md", "path": "AICP_Project_Completion_Report.md", "category": "Documentation", "size": "4.5 KB", "sizeBytes": 4575, "modified": "2025-12-04 12:01", "modifiedTimestamp": 1764871290, "source": "docs"}, {"name": "AICP-Summary.md", "path": "AICP-Summary.md", "category": "Documentation", "size": "6.2 KB", "sizeBytes": 6354, "modified": "2025-11-30 19:00", "modifiedTimestamp": 1764550842, "source": "docs"}, {"name": "coordinator_service_corrected.md", "path": "coordinator_service_corrected.md", "category": "Documentation", "size": "27.1 KB", "sizeBytes": 27720, "modified": "2025-11-30 17:22", "modifiedTimestamp": 1764544930, "source": "Docs"}, {"name": "Phase1_Completion_Report.md", "path": "Phase1_Completion_Report.md", "category": "Documentation", "size": "11.0 KB", "sizeBytes": 11309, "modified": "2025-11-30 17:03", "modifiedTimestamp": 1764543808, "source": "docs"}, {"name": "Session_Status_Ready_To_Test.md", "path": "Session_Status_Ready_To_Test.md", "category": "Documentation", "size": "10.2 KB", "sizeBytes": 10484, "modified": "2025-11-30 16:54", "modifiedTimestamp": 1764543281, "source": "docs"}, {"name": "AICP_Next_Steps_Nov_30.md", "path": "AICP_Next_Steps_Nov_30.md", "category": "Documentation", "size": "4.1 KB", "sizeBytes": 4207, "modified": "2025-11-30 16:41", "modifiedTimestamp": 1764542503, "source": "docs"}, {"name": "AICP_Daily_Report_Nov_30.md", "path": "AICP_Daily_Report_Nov_30.md", "category": "Documentation", "size": "29.5 KB", "sizeBytes": 30198, "modified": "2025-11-30 12:42", "modifiedTimestamp": 1764528124, "source": "docs"}, {"name": "comparison_table.png", "path": "comparison_table.png", "category": "Images", "size": "238.3 KB", "sizeBytes": 243993, "modified": "2025-11-30 12:37", "modifiedTimestamp": 1764527826, "source": "Docs"}, {"name": "coordinator-updates.md", "path": "coordinator-updates.md", "category": "Documentation", "size": "3.0 KB", "sizeBytes": 3056, "modified": "2025-11-30 12:36", "modifiedTimestamp": 1764527790, "source": "Docs"}, {"name": "document.pdf", "path": "document.pdf", "category": "PDF Documents", "size": "259.2 KB", "sizeBytes": 265370, "modified": "2025-11-30 12:15", "modifiedTimestamp": 1764526518, "source": "Docs"}, {"name": "AICP-Final-Project-Report.md", "path": "AICP-Final-Project-Report.md", "category": "Documentation", "size": "31.2 KB", "sizeBytes": 31957, "modified": "2025-11-30 10:57", "modifiedTimestamp": 1764521839, "source": "Docs"}, {"name": "Epic-6-7-8-Planning.md", "path": "Epic-6-7-8-Planning.md", "category": "Documentation", "size": "16.8 KB", "sizeBytes": 17166, "modified": "2025-11-29 22:35", "modifiedTimestamp": 1764477355, "source": "docs"}, {"name": "Session-Final-Summary.md", "path": "Session-Final-Summary.md", "category": "Documentation", "size": "9.5 KB", "sizeBytes": 9757, "modified": "2025-11-29 22:25", "modifiedTimestamp": 1764476727, "source": "docs"}, {"name": "Final-Wrap-Up.md", "path": "Final-Wrap-Up.md", "category": "Documentation", "size": "3.4 KB", "sizeBytes": 3449, "modified": "2025-11-29 21:37", "modifiedTimestamp": 1764473825, "source": "docs"}, {"name": "Complete-Project-Summary.md", "path": "Complete-Project-Summary.md", "category": "Documentation", "size": "16.3 KB", "sizeBytes": 16729, "modified": "2025-11-29 21:05", "modifiedTimestamp": 1764471932, "source": "docs"}, {"name": "Epic5-Kubernetes-Completion-Report.md", "path": "Epic5-Kubernetes-Completion-Report.md", "category": "Documentation", "size": "15.1 KB", "sizeBytes": 15499, "modified": "2025-11-29 20:58", "modifiedTimestamp": 1764471485, "source": "docs"}, {"name": "Epic5-Kubernetes-Guide.md", "path": "Epic5-Kubernetes-Guide.md", "category": "Documentation", "size": "13.3 KB", "sizeBytes": 13665, "modified": "2025-11-29 20:38", "modifiedTimestamp": 1764470282, "source": "docs"}, {"name": "Epic4-PostgreSQL-Completion-Report.md", "path": "Epic4-PostgreSQL-Completion-Report.md", "category": "Documentation", "size": "10.1 KB", "sizeBytes": 10340, "modified": "2025-11-29 20:37", "modifiedTimestamp": 1764470273, "source": "docs"}, {"name": "3Week_Complete_Summary.md", "path": "3Week_Complete_Summary.md", "category": "Documentation", "size": "8.3 KB", "sizeBytes": 8541, "modified": "2025-11-29 17:16", "modifiedTimestamp": 1764458200, "source": "docs"}, {"name": "START_HERE.md", "path": "START_HERE.md", "category": "Documentation", "size": "6.0 KB", "sizeBytes": 6099, "modified": "2025-11-29 12:01", "modifiedTimestamp": 1764439308, "source": "docs"}, {"name": "Architecture_Guide.md", "path": "Architecture_Guide.md", "category": "Documentation", "size": "7.7 KB", "sizeBytes": 7863, "modified": "2025-11-29 11:51", "modifiedTimestamp": 1764438717, "source": "docs"}, {"name": "comparison_chart.png", "path": "comparison_chart.png", "category": "Images", "size": "214.1 KB", "sizeBytes": 219287, "modified": "2025-11-29 11:43", "modifiedTimestamp": 1764438190, "source": "docs"}, {"name": "2Week_Progress_Report.md", "path": "2Week_Progress_Report.md", "category": "Documentation", "size": "10.4 KB", "sizeBytes": 10619, "modified": "2025-11-29 11:43", "modifiedTimestamp": 1764438181, "source": "docs"}, {"name": "Epic2_Completion_Report.md", "path": "Epic2_Completion_Report.md", "category": "Documentation", "size": "13.4 KB", "sizeBytes": 13737, "modified": "2025-11-29 11:42", "modifiedTimestamp": 1764438170, "source": "docs"}, {"name": "Integration_Guide.md", "path": "Integration_Guide.md", "category": "Documentation", "size": "9.2 KB", "sizeBytes": 9457, "modified": "2025-11-29 11:32", "modifiedTimestamp": 1764437575, "source": "docs"}, {"name": "circuit_breaker.png", "path": "circuit_breaker.png", "category": "Images", "size": "152.2 KB", "sizeBytes": 155893, "modified": "2025-11-29 11:32", "modifiedTimestamp": 1764437567, "source": "docs"}, {"name": "Epic1_Failover_Complete.md", "path": "Epic1_Failover_Complete.md", "category": "Documentation", "size": "7.0 KB", "sizeBytes": 7207, "modified": "2025-11-29 11:22", "modifiedTimestamp": 1764436975, "source": "docs"}, {"name": "NEXT-STEPS-ROADMAP.md", "path": "NEXT-STEPS-ROADMAP.md", "category": "Documentation", "size": "13.9 KB", "sizeBytes": 14271, "modified": "2025-11-28 21:37", "modifiedTimestamp": 1764387435, "source": "docs"}, {"name": "SPRINT-ACCOMPLISHMENT-REPORT.md", "path": "SPRINT-ACCOMPLISHMENT-REPORT.md", "category": "Documentation", "size": "20.2 KB", "sizeBytes": 20651, "modified": "2025-11-28 21:37", "modifiedTimestamp": 1764387428, "source": "docs"}, {"name": "ROUTING-INTEGRATION.md", "path": "ROUTING-INTEGRATION.md", "category": "Documentation", "size": "10.0 KB", "sizeBytes": 10213, "modified": "2025-11-28 21:27", "modifiedTimestamp": 1764386872, "source": "docs"}, {"name": "WEBSOCKET-COMPLETE.md", "path": "WEBSOCKET-COMPLETE.md", "category": "Documentation", "size": "17.9 KB", "sizeBytes": 18297, "modified": "2025-11-28 21:25", "modifiedTimestamp": 1764386744, "source": "docs"}, {"name": "ADVANCED-ROUTING-EPIC.md", "path": "ADVANCED-ROUTING-EPIC.md", "category": "Documentation", "size": "17.5 KB", "sizeBytes": 17970, "modified": "2025-11-28 21:24", "modifiedTimestamp": 1764386660, "source": "docs"}, {"name": "AICP-LABELEE-COMPLETE.md", "path": "AICP-LABELEE-COMPLETE.md", "category": "Documentation", "size": "12.6 KB", "sizeBytes": 12864, "modified": "2025-11-28 21:05", "modifiedTimestamp": 1764385532, "source": "docs"}, {"name": "aicp-labelee-sprint-complete.md", "path": "aicp-labelee-sprint-complete.md", "category": "Documentation", "size": "4.8 KB", "sizeBytes": 4965, "modified": "2025-11-28 20:48", "modifiedTimestamp": 1764384488, "source": "docs"}, {"name": "SPRINT-1.MD", "path": "SPRINT-1.MD", "category": "Documentation", "size": "2.1 KB", "sizeBytes": 2180, "modified": "2025-11-28 20:30", "modifiedTimestamp": 1764383429, "source": "docs"}, {"name": "README.md", "path": "README.md", "category": "Documentation", "size": "818.0 B", "sizeBytes": 818, "modified": "2025-11-28 20:22", "modifiedTimestamp": 1764382947, "source": "docs"}, {"name": "DukeNET-Scrum-Tracker.html", "path": "DukeNET-Scrum-Tracker.html", "category": "Web", "size": "23.1 KB", "sizeBytes": 23616, "modified": "2025-11-28 19:52", "modifiedTimestamp": 1764381147, "source": "docs"}, {"name": "DukeNET_AINS_Comprehensive_Guide.md", "path": "DukeNET_AINS_Comprehensive_Guide.md", "category": "Documentation", "size": "23.7 KB", "sizeBytes": 24219, "modified": "2025-11-28 19:09", "modifiedTimestamp": 1764378589, "source": "docs"}, {"name": "SPRINT_9_COMPLETE.md", "path": "SPRINT_9_COMPLETE.md", "category": "Documentation", "size": "3.0 KB", "sizeBytes": 3096, "modified": "2025-11-28 12:46", "modifiedTimestamp": 1764355608, "source": "docs"}, {"name": "GRAFANA_SETUP_GUIDE.md", "path": "GRAFANA_SETUP_GUIDE.md", "category": "Documentation", "size": "2.4 KB", "sizeBytes": 2493, "modified": "2025-11-28 12:46", "modifiedTimestamp": 1764355579, "source": "docs"}, {"name": "QUICK_REFERENCE.md", "path": "QUICK_REFERENCE.md", "category": "Documentation", "size": "7.8 KB", "sizeBytes": 8020, "modified": "2025-11-28 11:25", "modifiedTimestamp": 1764350743, "source": "docs"}, {"name": "EXECUTIVE_SUMMARY.md", "path": "EXECUTIVE_SUMMARY.md", "category": "Documentation", "size": "10.8 KB", "sizeBytes": 11052, "modified": "2025-11-28 11:25", "modifiedTimestamp": 1764350738, "source": "docs"}, {"name": "SPRINT_9_10_RESUMPTION_GUIDE.md", "path": "SPRINT_9_10_RESUMPTION_GUIDE.md", "category": "Documentation", "size": "21.2 KB", "sizeBytes": 21727, "modified": "2025-11-28 11:25", "modifiedTimestamp": 1764350730, "source": "docs"}, {"name": "DEPLOYMENT_SUMMARY.txt", "path": "DEPLOYMENT_SUMMARY.txt", "category": "Documentation", "size": "20.4 KB", "sizeBytes": 20936, "modified": "2025-11-28 02:50", "modifiedTimestamp": 1764319842, "source": "docs"}, {"name": "QUICK_START.md", "path": "QUICK_START.md", "category": "Documentation", "size": "7.9 KB", "sizeBytes": 8106, "modified": "2025-11-28 02:50", "modifiedTimestamp": 1764319838, "source": "docs"}, {"name": "SPRINT_10_TASK_SCHEDULING.md", "path": "SPRINT_10_TASK_SCHEDULING.md", "category": "Documentation", "size": "14.1 KB", "sizeBytes": 14418, "modified": "2025-11-28 02:44", "modifiedTimestamp": 1764319441, "source": "docs"}, {"name": "AINS_PROTOCOL_STATUS.md", "path": "AINS_PROTOCOL_STATUS.md", "category": "Documentation", "size": "6.5 KB", "sizeBytes": 6610, "modified": "2025-11-28 02:43", "modifiedTimestamp": 1764319385, "source": "docs"}, {"name": "SPRINT_10_PLAN.md", "path": "SPRINT_10_PLAN.md", "category": "Documentation", "size": "6.7 KB", "sizeBytes": 6904, "modified": "2025-11-28 02:33", "modifiedTimestamp": 1764318801, "source": "docs"}, {"name": "SPRINT_9_FINAL_STATUS.md", "path": "SPRINT_9_FINAL_STATUS.md", "category": "Documentation", "size": "4.2 KB", "sizeBytes": 4343, "modified": "2025-11-27 20:42", "modifiedTimestamp": 1764297733, "source": "docs"}, {"name": "SPRINT_9.MD", "path": "SPRINT_9.MD", "category": "Documentation", "size": "7.8 KB", "sizeBytes": 7959, "modified": "2025-11-27 18:48", "modifiedTimestamp": 1764290911, "source": "docs"}, {"name": "SYSTEM_STATUS.md", "path": "SYSTEM_STATUS.md", "category": "Documentation", "size": "3.1 KB", "sizeBytes": 3185, "modified": "2025-11-23 17:36", "modifiedTimestamp": 1763940999, "source": "docs"}, {"name": "DATABASE_SETUP.md", "path": "DATABASE_SETUP.md", "category": "Documentation", "size": "3.1 KB", "sizeBytes": 3174, "modified": "2025-11-23 17:31", "modifiedTimestamp": 1763940703, "source": "docs"}, {"name": "SPRINT_8_COMPLETE.md", "path": "SPRINT_8_COMPLETE.md", "category": "Documentation", "size": "3.3 KB", "sizeBytes": 3430, "modified": "2025-11-23 16:52", "modifiedTimestamp": 1763938355, "source": "docs"}, {"name": "SPRINT_8_PLAN.md", "path": "SPRINT_8_PLAN.md", "category": "Documentation", "size": "14.3 KB", "sizeBytes": 14674, "modified": "2025-11-23 15:07", "modifiedTimestamp": 1763932041, "source": "docs"}, {"name": "SPRINT_7.md", "path": "SPRINT_7.md", "category": "Documentation", "size": "8.0 KB", "sizeBytes": 8232, "modified": "2025-11-23 14:53", "modifiedTimestamp": 1763931225, "source": "docs"}, {"name": "README.md", "path": "README.md", "category": "Documentation", "size": "16.1 KB", "sizeBytes": 16473, "modified": "2025-11-23 14:51", "modifiedTimestamp": 1763931062, "source": "docs"}, {"name": "Database-Schema.md", "path": "Database-Schema.md", "category": "Documentation", "size": "15.5 KB", "sizeBytes": 15897, "modified": "2025-11-23 14:43", "modifiedTimestamp": 1763930629, "source": "docs"}, {"name": "README.md", "path": "README.md", "category": "Documentation", "size": "54.3 KB", "sizeBytes": 55607, "modified": "2025-11-23 14:39", "modifiedTimestamp": 1763930348, "source": "docs"}, {"name": "README.md", "path": "README.md", "category": "Documentation", "size": "33.9 KB", "sizeBytes": 34729, "modified": "2025-11-23 14:33", "modifiedTimestamp": 1763930018, "source": "docs"}, {"name": "DukeNET-AINS.md", "path": "DukeNET-AINS.md", "category": "Documentation", "size": "11.8 KB", "sizeBytes": 12064, "modified": "2025-11-23 14:27", "modifiedTimestamp": 1763929630, "source": "docs"}, {"name": "PROJECT_SUMMARY.md", "path": "PROJECT_SUMMARY.md", "category": "Documentation", "size": "19.4 KB", "sizeBytes": 19861, "modified": "2025-11-23 12:13", "modifiedTimestamp": 1763921615, "source": "docs"}, {"name": "SPRINT_4_summary.md", "path": "SPRINT_4_summary.md", "category": "Documentation", "size": "22.6 KB", "sizeBytes": 23125, "modified": "2025-11-23 11:33", "modifiedTimestamp": 1763919216, "source": "docs"}, {"name": "SPRINT_6_SECURITY.md", "path": "SPRINT_6_SECURITY.md", "category": "Documentation", "size": "10.8 KB", "sizeBytes": 11076, "modified": "2025-11-23 11:32", "modifiedTimestamp": 1763919130, "source": "docs"}, {"name": "sprint_2_summary.md", "path": "sprint_2_summary.md", "category": "Documentation", "size": "2.2 KB", "sizeBytes": 2250, "modified": "2025-11-23 11:24", "modifiedTimestamp": 1763918647, "source": "docs"}, {"name": "SPRINT_4.md", "path": "SPRINT_4.md", "category": "Documentation", "size": "18.8 KB", "sizeBytes": 19209, "modified": "2025-11-23 11:24", "modifiedTimestamp": 1763918647, "source": "docs"}, {"name": "SPRINT_3.MD", "path": "SPRINT_3.MD", "category": "Documentation", "size": "1.9 KB", "sizeBytes": 1961, "modified": "2025-11-23 11:24", "modifiedTimestamp": 1763918647, "source": "docs"}, {"name": "SPRINT_2_DETAILED_PLAN.md", "path": "SPRINT_2_DETAILED_PLAN.md", "category": "Documentation", "size": "22.0 KB", "sizeBytes": 22545, "modified": "2025-11-23 11:24", "modifiedTimestamp": 1763918647, "source": "docs"}, {"name": "SPRINT_1_DETAILED_PLAN_FINAL.md", "path": "SPRINT_1_DETAILED_PLAN_FINAL.md", "category": "Documentation", "size": "15.3 KB", "sizeBytes": 15649, "modified": "2025-11-23 11:24", "modifiedTimestamp": 1763918647, "source": "docs"}, {"name": "DukeNET-Test-Results.html", "path": "DukeNET-Test-Results.html", "category": "Web", "size": "24.4 KB", "sizeBytes": 25020, "modified": "2025-11-22 10:44", "modifiedTimestamp": 1763829892, "source": "docs"}, {"name": "test_results_summary.csv", "path": "test_results_summary.csv", "category": "Data", "size": "1.7 KB", "sizeBytes": 1717, "modified": "2025-11-22 10:31", "modifiedTimestamp": 1763829088, "source": "docs"}, {"name": "PRODUCT_BACKLOG.md", "path": "PRODUCT_BACKLOG.md", "category": "Documentation", "size": "13.1 KB", "sizeBytes": 13393, "modified": "2025-11-21 13:08", "modifiedTimestamp": 1763752095, "source": "docs"}, {"name": "API-Endpoints.md", "path": "API-Endpoints.md", "category": "Documentation", "size": "4.9 KB", "sizeBytes": 5052, "modified": "2025-11-21 11:57", "modifiedTimestamp": 1763747830, "source": "docs"}, {"name": "contributing.md", "path": "contributing.md", "category": "Documentation", "size": "6.0 KB", "sizeBytes": 6182, "modified": "2025-11-21 11:55", "modifiedTimestamp": 1763747757, "source": "docs"}, {"name": "Security-Model.md", "path": "Security-Model.md", "category": "Documentation", "size": "7.0 KB", "sizeBytes": 7151, "modified": "2025-11-21 11:54", "modifiedTimestamp": 1763747696, "source": "docs"}, {"name": "dukenet_architecture.html", "path": "dukenet_architecture.html", "category": "Web", "size": "25.2 KB", "sizeBytes": 25757, "modified": "2025-11-21 11:30", "modifiedTimestamp": 1763746237, "source": "docs"}, {"name": "ADR-001-Protocol-Stack.md", "path": "ADR-001-Protocol-Stack.md", "category": "Documentation", "size": "2.6 KB", "sizeBytes": 2621, "modified": "2025-11-21 11:21", "modifiedTimestamp": 1763745684, "source": "docs"}, {"name": "AITP-Task-Protocol.md", "path": "AITP-Task-Protocol.md", "category": "Documentation", "size": "6.6 KB", "sizeBytes": 6794, "modified": "2025-11-21 11:21", "modifiedTimestamp": 1763745662, "source": "docs"}, {"name": "AINS-Registry-Schema.md", "path": "AINS-Registry-Schema.md", "category": "Documentation", "size": "6.0 KB", "sizeBytes": 6177, "modified": "2025-11-21 11:20", "modifiedTimestamp": 1763745635, "source": "docs"}, {"name": "AICP-RFC.md", "path": "AICP-RFC.md", "category": "Documentation", "size": "6.4 KB", "sizeBytes": 6554, "modified": "2025-11-21 11:19", "modifiedTimestamp": 1763745584, "source": "docs"}, {"name": "DukeNET_(AINet)_System_Architecture_-_Six_Core_Components.png", "path": "DukeNET_(AINet)_System_Architecture_-_Six_Core_Components.png", "category": "Images", "size": "149.6 KB", "sizeBytes": 153220, "modified": "2025-11-21 11:02", "modifiedTimestamp": 1763744568, "source": "docs"}];
+        
+        console.log('Total documents loaded:', documents.length);
+        
+        const categoryIcons = {
+            'Documentation': '📝',
+            'PDF Documents': '📄',
+            'Code': '💻',
+            'Web': '🌐',
+            'Data': '📊',
+            'Images': '🖼️',
+            'Archives': '📦',
+            'Office': '📋',
+            'Other': '📁'
+        };
+        
+        let activeFilter = 'all';
+        let searchTerm = '';
+        let currentSort = 'newest';
+        
+        const categories = {};
+        documents.forEach(doc => {
+            if (!categories[doc.category]) {
+                categories[doc.category] = [];
+            }
+            categories[doc.category].push(doc);
+        });
+        
+        function sortDocuments(docs, sortType) {
+            const sorted = [...docs];
+            switch(sortType) {
+                case 'newest':
+                    return sorted.sort((a, b) => b.modifiedTimestamp - a.modifiedTimestamp);
+                case 'oldest':
+                    return sorted.sort((a, b) => a.modifiedTimestamp - b.modifiedTimestamp);
+                case 'name-asc':
+                    return sorted.sort((a, b) => a.name.localeCompare(b.name));
+                case 'name-desc':
+                    return sorted.sort((a, b) => b.name.localeCompare(a.name));
+                case 'size-desc':
+                    return sorted.sort((a, b) => b.sizeBytes - a.sizeBytes);
+                case 'size-asc':
+                    return sorted.sort((a, b) => a.sizeBytes - b.sizeBytes);
+                default:
+                    return sorted;
+            }
+        }
+        
+        function renderFilters() {
+            const filtersContainer = document.getElementById('filters');
+            let html = '<button class="filter-btn active" data-category="all">✨ All Files (' + documents.length + ')</button>';
+            
+            Object.keys(categories).sort().forEach(category => {
+                const icon = categoryIcons[category] || '📁';
+                const count = categories[category].length;
+                html += '<button class="filter-btn" data-category="' + category + '">' + icon + ' ' + category + ' (' + count + ')</button>';
+            });
+            
+            filtersContainer.innerHTML = html;
+            
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const category = this.getAttribute('data-category');
+                    filterCategory(category, this);
+                });
+            });
+        }
+        
+        function filterCategory(category, element) {
+            activeFilter = category;
+            
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            if (element) {
+                element.classList.add('active');
+            }
+            
+            renderDocuments();
+        }
+        
+        function renderDocuments() {
+            const contentContainer = document.getElementById('content');
+            let html = '';
+            
+            const filteredCategories = activeFilter === 'all' ? categories : { [activeFilter]: categories[activeFilter] };
+            let hasResults = false;
+            
+            Object.keys(filteredCategories).sort().forEach(category => {
+                const files = filteredCategories[category].filter(doc => {
+                    const search = searchTerm.toLowerCase();
+                    return doc.name.toLowerCase().includes(search) ||
+                           doc.category.toLowerCase().includes(search) ||
+                           doc.source.toLowerCase().includes(search);
+                });
+                
+                if (files.length === 0) return;
+                
+                hasResults = true;
+                
+                const icon = categoryIcons[category] || '📁';
+                
+                html += `
+                    <div class="category-section">
+                        <div class="category-header">
+                            <span class="category-icon">${icon}</span>
+                            <h2 class="category-title">${category}</h2>
+                            <span class="category-count">${files.length} file${files.length !== 1 ? 's' : ''}</span>
+                        </div>
+                        <div class="file-grid">
+                `;
+                
+                files.forEach(doc => {
+                    const escapedPath = doc.path.replace(/'/g, "\'");
+                    html += '<div class="file-card" data-path="' + escapedPath + '">';
+                    html += '<div class="file-icon">' + icon + '</div>';
+                    html += '<div class="file-name">' + doc.name + '</div>';
+                    html += '<div class="file-source">' + doc.source + '</div>';
+                    html += '<div class="file-meta">';
+                    html += '<span>📦 ' + doc.size + '</span>';
+                    html += '<span>🕒 ' + doc.modified + '</span>';
+                    html += '</div>';
+                    html += '</div>';
+                });
+                
+                html += '</div></div>';
+            });
+            
+            if (!hasResults) {
+                html = `
+                    <div class="no-results">
+                        <div class="no-results-icon">🔍</div>
+                        <h3>No files found</h3>
+                        <p>Try adjusting your search or filter</p>
+                    </div>
+                `;
+            }
+            
+            contentContainer.innerHTML = html;
+            
+            document.querySelectorAll('.file-card').forEach(card => {
+                card.addEventListener('click', function() {
+                    const path = this.getAttribute('data-path');
+                    openFile(path);
+                });
+            });
+        }
+        
+        function openFile(path) {
+            window.open(path, '_blank');
+        }
+        
+        document.getElementById('searchBox').addEventListener('input', function(e) {
+            searchTerm = e.target.value;
+            renderDocuments();
+        });
+        
+        document.getElementById('sortSelect').addEventListener('change', function(e) {
+            currentSort = e.target.value;
+            renderDocuments();
+        });
+        
+        // Auto-refresh functionality
+        const AUTO_REFRESH_INTERVAL = 1800000; // milliseconds
+        let lastModified = 1765028378804;
+        
+        async function checkForUpdates() {
+            try {
+                const response = await fetch('index.html', { 
+                    method: 'HEAD',
+                    cache: 'no-cache'
+                });
+                const serverModified = new Date(response.headers.get('last-modified')).getTime();
+                
+                if (serverModified > lastModified) {
+                    console.log('New updates detected, reloading...');
+                    location.reload();
+                }
+            } catch (error) {
+                console.log('Update check failed:', error);
+            }
+        }
+        
+        // Check for updates periodically
+        setInterval(checkForUpdates, AUTO_REFRESH_INTERVAL);
+        
+        // Show notification about auto-refresh
+        console.log('Auto-refresh enabled: Checking for updates every ' + (AUTO_REFRESH_INTERVAL / 60000) + ' minutes');
+        
+        renderFilters();
+        renderDocuments();
+    </script>
+</body>
+</html>

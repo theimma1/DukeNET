@@ -1,0 +1,32 @@
+2025-12-08 01:46:34,751 - __main__ - INFO - ✅ Duke model loaded from checkpoint
+2025-12-08 01:46:34,751 - __main__ - INFO - ✅ REAL Duke ML Pipeline initialized on cpu
+INFO:     Started server process [36782]
+INFO:     Waiting for application startup.
+2025-12-08 01:46:34,816 - __main__ - INFO - 🚀 Starting AICP Coordinator Service v4.2.0...
+2025-12-08 01:46:34,817 - __main__ - INFO - ✅ Database migration completed
+2025-12-08 01:46:34,819 - __main__ - INFO - ✅ Found 3 existing agents
+2025-12-08 01:46:34,819 - __main__ - INFO - ✅ OpenAI API configured
+2025-12-08 01:46:34,819 - __main__ - INFO - ✅ REAL Duke Learning Pipeline enabled (PyTorch Neural Network)
+2025-12-08 01:46:34,819 - __main__ - INFO - ✅ Enhanced error handling active
+2025-12-08 01:46:34,819 - __main__ - INFO - ✅ Professional dashboard ready
+2025-12-08 01:46:34,819 - __main__ - INFO - ✅ Server ready! Dashboard: http://localhost:8000/dashboard
+INFO:     Application startup complete.
+ERROR:    [Errno 48] error while attempting to bind on address ('0.0.0.0', 8000): [errno 48] address already in use
+INFO:     Waiting for application shutdown.
+2025-12-08 01:46:34,819 - __main__ - INFO - 🛑 Shutting down server...
+INFO:     Application shutdown complete.
+╔════════════════════════════════════════════════════════════════╗
+║     AICP Coordinator + REAL Duke Machine Learning v4.2.0      ║
+║        ENTERPRISE DASHBOARD WITH AUTO-REFRESH & ANIMATIONS    ║
+╚════════════════════════════════════════════════════════════════╝
+
+✅ FastAPI:        Configured
+✅ OpenAI:         Configured
+✅ Duke Learning:  ✅ REAL ML ENABLED (PyTorch Neural Network)
+✅ Database:       SQLite
+✅ Dashboard:      http://localhost:8000/dashboard
+✅ Auto-Refresh:   Every 5 seconds
+✅ Design:         Professional Glass-morphism
+
+🚀 Starting server...
+
