@@ -64,9 +64,134 @@ OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 MAX_RETRIES = 5
 RETRY_DELAY = 2
 
+# ==================== PHASE 4: SPECIALIST PERSONAS ====================
+
+SPECIALIST_PERSONAS = {
+    "security-expert": {
+        "name": "Security Expert",
+        "reputation_multiplier": 1.75,
+        "system_prompt": """You are a CYNICAL SECURITY AUDITOR with zero-trust methodology.
+ASSUME BREACH. Identify attack vectors and implement defense-in-depth.
+
+RESPONSE FORMAT:
+═══════════════════════════════════════
+SECURITY AUDIT: [Task Name]
+Risk Level: [CRITICAL/HIGH/MEDIUM/LOW]
+Attack Vector: [Primary Risk]
+Mitigation: [Immediate Actions]
+═══════════════════════════════════════
+
+Use terminology: CVE, CVSS, zero-trust, privilege escalation, threat model.
+ALWAYS mention monitoring and incident response.""",
+        "validation_keywords": ["CVE", "CVSS", "zero-trust", "attack", "threat"]
+    },
+    
+    "ml-expert": {
+        "name": "ML Research Scientist", 
+        "reputation_multiplier": 1.90,
+        "system_prompt": """You are a RESEARCH SCIENTIST with deep ML expertise.
+Focus on RIGOR, REPRODUCIBILITY, and MATHEMATICAL PRECISION.
+
+RESPONSE FORMAT:
+═══════════════════════════════════════
+ML RESEARCH ANALYSIS: [Task Name]
+Problem: [Formal Definition]
+Architecture: [Model + Justification]
+Data Strategy: [Lineage + Augmentation]
+Validation: [Metrics + Split]
+═══════════════════════════════════════
+
+Use terminology: gradient descent, regularization, validation, hyperparameters.
+ALWAYS include validation strategy and failure modes.""",
+        "validation_keywords": ["gradient", "convergence", "validation", "hyperparameter"]
+    },
+    
+    "systems-expert": {
+        "name": "Principal Cloud Architect",
+        "reputation_multiplier": 1.80,
+        "system_prompt": """You are a PRINCIPAL CLOUD ARCHITECT.
+Focus on SCALE, FAULT-TOLERANCE, and COST-OPTIMIZATION.
+
+RESPONSE FORMAT:
+═══════════════════════════════════════
+INFRASTRUCTURE DESIGN: [Task Name]
+Scalability: [Horizontal/Vertical/Hybrid]
+Consistency: [Strong/Eventual/Causal]
+Failure Domain: [SPOF Analysis]
+Cost: [Monthly + Optimization]
+═══════════════════════════════════════
+
+Use terminology: CAP theorem, sharding, replication, consensus, SLA.
+ALWAYS propose redundancy and monitoring.""",
+        "validation_keywords": ["CAP", "scalability", "replication", "consistency"]
+    },
+    
+    "backend-expert": {
+        "name": "Senior Software Engineer",
+        "reputation_multiplier": 1.65,
+        "system_prompt": """You are a SENIOR SOFTWARE ENGINEER.
+Focus on CLEAN CODE, TESTABILITY, and MAINTAINABILITY.
+
+RESPONSE FORMAT:
+═══════════════════════════════════════
+BACKEND IMPLEMENTATION: [Task Name]
+Architecture: [Monolith/Microservices/Serverless]
+Design Pattern: [Primary Pattern]
+API Contract: [RESTful/GraphQL/gRPC]
+Testing: [Coverage Target]
+═══════════════════════════════════════
+
+Use terminology: SOLID, idempotency, circuit breaker, observability.
+ALWAYS include testing strategy.""",
+        "validation_keywords": ["SOLID", "pattern", "API", "testing", "observability"]
+    },
+    
+    "advanced-expert": {
+        "name": "Visionary Research Engineer",
+        "reputation_multiplier": 1.55,
+        "system_prompt": """You are a VISIONARY RESEARCH ENGINEER.
+Focus on EMERGING INNOVATIONS and NOVEL APPLICATIONS.
+
+RESPONSE FORMAT:
+═══════════════════════════════════════
+ADVANCED TECH ANALYSIS: [Task Name]
+Technology: [Quantum/Blockchain/Web3/Edge]
+Maturity: [Research/Prototype/Production]
+Applicability: [Use Case Fit]
+Timeline: [Adoption Window]
+═══════════════════════════════════════
+
+Use terminology: quantum gates, consensus algorithms, zero-knowledge proofs.
+ALWAYS include timeline to production.""",
+        "validation_keywords": ["quantum", "blockchain", "emerging", "prototype"]
+    },
+    
+    "duke-ml": {
+        "name": "Duke Core (Generalist)",
+        "reputation_multiplier": 2.00,
+        "system_prompt": """You are an EXPERIENCED TECHNICAL LEAD.
+Focus on PRAGMATIC RECOMMENDATIONS and CLEAR COMMUNICATION.
+
+RESPONSE FORMAT:
+═══════════════════════════════════════
+TECHNICAL RECOMMENDATION: [Task Name]
+Executive Summary: [1-2 sentences]
+Trade-offs: [Pro/Con Analysis]
+Action: [Next Steps]
+Timeline: [Realistic Estimate]
+═══════════════════════════════════════
+
+Balance perspectives with explicit trade-offs.
+ALWAYS provide context for non-experts.""",
+        "validation_keywords": ["trade-off", "recommendation", "action", "timeline"]
+    }
+}
+
 # ==================== DATABASE SETUP ====================
 
-DATABASE_URL = "postgresql://localhost:5432/duke_ml_production"
+DATABASE_URL = "postgresql://imman_duke:Maybach001%40@localhost:5432/duke_ml_production"
+# Note: @ is URL-encoded as %40 in the password
+
 engine = create_engine(DATABASE_URL, pool_size=20, max_overflow=40)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -100,6 +225,19 @@ class Task(Base):
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
     processing_time_seconds = Column(Float, nullable=True)
+    persona_used = Column(String, nullable=True)  # ← ADD THIS LINE
+
+
+class PersonaMetrics(Base):
+    __tablename__ = "persona_metrics"
+    id = Column(String, primary_key=True, index=True)
+    persona_type = Column(String, index=True)
+    tasks_completed = Column(Integer, default=0)
+    average_complexity = Column(Float, default=0.0)
+    success_rate = Column(Float, default=0.0)
+    keyword_accuracy = Column(Float, default=0.0)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 class User(Base):
     __tablename__ = "users"
@@ -118,19 +256,23 @@ class TrainingData(Base):
     output_data = Column(JSON)
     success = Column(Boolean, nullable=False)
     agent_name = Column(String)
+    persona_type = Column(String, index=True)  # ← ADD THIS LINE
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
-class ModelVersion(Base):
+
+class ModelVersionBase(Base):
     __tablename__ = "model_versions"
+    
     id = Column(String, primary_key=True, index=True)
-    version_number = Column(Integer, nullable=False)
-    model_name = Column(String, default="duke-mm")
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    training_samples = Column(Integer)
-    validation_accuracy = Column(Float)
-    validation_f1 = Column(Float)
-    is_production = Column(Boolean, default=False)
-    model_info = Column(JSON)
+    version_number = Column(Integer, nullable=False)  # MATCHES DB: version_number
+    model_name = Column(String, default="duke-ml")    # MATCHES DB: model_name
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc)) # MATCHES DB: created_at
+    training_samples = Column(Integer)                # MATCHES DB: training_samples
+    validation_accuracy = Column(Float)               # MATCHES DB: validation_accuracy
+    validation_f1 = Column(Float)                     # MATCHES DB: validation_f1
+    is_production = Column(Boolean, default=False)    # MATCHES DB: is_production
+    model_info = Column(JSON)                         # MATCHES DB: model_info
+
 
 # ==================== CREATE TABLES ====================
 
@@ -385,34 +527,6 @@ class RealDukeMLPipeline:
         self.load_checkpoint()
         logger.info(f"✅ REAL Duke ML Pipeline initialized on {self.device}")
     
-    def load_checkpoint(self):
-        """Load model from disk"""
-        try:
-            model_path = self.checkpoint_dir / "duke_model.pth"
-            if model_path.exists():
-                self.model = SimpleDukeModel().to(self.device)
-                self.model.load_state_dict(torch.load(model_path, map_location=self.device))
-                self.model.eval()
-                
-                # Load embedder and generator
-                embedder_path = self.checkpoint_dir / "duke_embedder.pkl"
-                generator_path = self.checkpoint_dir / "duke_responses.pkl"
-                
-                if embedder_path.exists():
-                    with open(embedder_path, "rb") as f:
-                        self.embedder = pickle.load(f)
-                
-                if generator_path.exists():
-                    with open(generator_path, "rb") as f:
-                        self.generator = pickle.load(f)
-                    logger.info(f"✅ Duke generator loaded with {len(self.generator.response_database)} responses")
-                
-                logger.info("✅ Duke model loaded from checkpoint")
-            else:
-                logger.info("ℹ️ No existing Duke model found - will train from scratch")
-        except Exception as e:
-            logger.warning(f"⚠️ Could not load checkpoint: {e}")
-    
     def save_checkpoint(self):
         """Save model to disk"""
         try:
@@ -525,6 +639,7 @@ class RealDukeMLPipeline:
                     if len(output_result) > 50:
                         complexity = input_data.get('complexity', 5) if isinstance(input_data, dict) else 5
                         agent = output_data.get('agent', 'unknown') if isinstance(output_data, dict) else 'unknown'
+                        persona = getattr(td, 'persona_type', 'duke-ml')  # ← GET PERSONA FROM DB
                         
                         success = self.generator.add_response(
                             embedding=x,
@@ -532,6 +647,7 @@ class RealDukeMLPipeline:
                             metadata={
                                 "complexity": complexity,
                                 "agent": agent,
+                                "persona": persona,  # ← ADD PERSONA TO METADATA
                                 "timestamp": td.created_at.isoformat() if td.created_at else None
                             }
                         )
@@ -690,41 +806,63 @@ class RealDukeMLPipeline:
             pickle.dump(self.generator, f)
     
     def load_checkpoint(self):
-        """Load model from disk"""
+        """Load model from disk - handles both Simple and Enhanced models"""
         try:
             model_path = self.checkpoint_dir / "duke_model.pth"
             if model_path.exists():
-                self.model = SimpleDukeModel().to(self.device)
-                self.model.load_state_dict(torch.load(model_path, map_location=self.device))
+                # Try loading the checkpoint first to inspect it
+                checkpoint = torch.load(model_path, map_location=self.device)
+                
+                # Check if it's an EnhancedDukeModel (has 'input_proj' key)
+                if 'input_proj.weight' in checkpoint:
+                    logger.info("📦 Detected EnhancedDukeModel checkpoint")
+                    self.model = EnhancedDukeModel().to(self.device)
+                else:
+                    logger.info("📦 Detected SimpleDukeModel checkpoint")
+                    self.model = SimpleDukeModel().to(self.device)
+                
+                # Load the state dict
+                self.model.load_state_dict(checkpoint)
                 self.model.eval()
                 
-                # Load embedder
-                with open(self.checkpoint_dir / "duke_embedder.pkl", 'rb') as f:
-                    self.embedder = pickle.load(f)
+                # Load embedder and generator
+                embedder_path = self.checkpoint_dir / "duke_embedder.pkl"
+                generator_path = self.checkpoint_dir / "duke_responses.pkl"
                 
-                # Load generator
-                with open(self.checkpoint_dir / "duke_responses.pkl", 'rb') as f:
-                    self.generator = pickle.load(f)
+                if embedder_path.exists():
+                    with open(embedder_path, "rb") as f:
+                        self.embedder = pickle.load(f)
+                    logger.info(f"✅ Embedder loaded (vocab: {self.embedder.vocab_size} words)")
                 
-                logger.info("✅ Duke model loaded from checkpoint")
+                if generator_path.exists():
+                    with open(generator_path, "rb") as f:
+                        self.generator = pickle.load(f)
+                    logger.info(f"✅ Generator loaded with {len(self.generator.response_database)} responses")
+                
+                logger.info("✅ Duke model loaded from checkpoint successfully")
             else:
-                logger.info("📦 No existing Duke model found - will train from scratch")
+                logger.info("ℹ️ No existing Duke model found - will train from scratch")
         except Exception as e:
             logger.warning(f"⚠️ Could not load checkpoint: {e}")
+            logger.info("ℹ️ Will initialize fresh model on first training")
 
-# ==================== GLOBAL INSTANCES ====================
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-duke_pipeline = RealDukeMLPipeline()
-
-# ==================== FASTAPI APP ====================
-
+class PersonaValidator:
+    """Validate responses match expected persona characteristics"""
+    @staticmethod
+    def validate_response(response: str, persona_type: str) -> Dict:
+        """Check if response contains persona-specific keywords"""
+        if persona_type not in SPECIALIST_PERSONAS:
+            return {"valid": True, "score": 1.0, "missing_keywords": []}
+        
+        persona = SPECIALIST_PERSONAS[persona_type]
+        keywords = persona["validation_keywords"]
+        
+        response_lower = response.lower()
+        found_keywords = [kw for kw in keywords if kw.lower() in response_lower]
+        
+        score = len(found_keywords) / len(keywords) if keywords else 1.0
+        missing = [kw for kw in keywords if kw not in found_keywords]
+        
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -756,6 +894,18 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("🛑 Shutting down server...")
+
+def get_db():
+    """Database session dependency"""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# ==================== INITIALIZE DUKE PIPELINE ====================
+duke_pipeline = RealDukeMLPipeline()
+persona_validator = PersonaValidator()
 
 app = FastAPI(title="AICP Coordinator", lifespan=lifespan)
 
@@ -1072,6 +1222,50 @@ async def get_dashboard():
             animation: slideRight 1s var(--ease);
         }
 
+        /* NEW TASK SECTION STYLE */
+        .new-task-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 40px;
+            backdrop-filter: blur(10px);
+            animation: fadeInUp 0.6s var(--ease);
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: 200px 1fr 150px;
+            gap: 20px;
+            align-items: end;
+        }
+
+        .form-group label {
+            display: block;
+            color: var(--text-secondary);
+            font-size: 12px;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            letter-spacing: 0.5px;
+        }
+
+        .form-input, .form-select {
+            width: 100%;
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 14px;
+            transition: all 0.3s var(--ease);
+        }
+
+        .form-input:focus, .form-select:focus {
+            outline: none;
+            border-color: var(--primary);
+            background: rgba(0, 0, 0, 0.4);
+        }
+
         .section {
             margin-bottom: 40px;
             animation: fadeInUp 0.6s var(--ease);
@@ -1343,6 +1537,11 @@ async def get_dashboard():
             .modal-content {
                 padding: 20px;
             }
+            
+            .form-grid {
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }
         }
     </style>
 </head>
@@ -1393,6 +1592,36 @@ async def get_dashboard():
                 <div class="metric-value" id="dukeAccuracy">--</div>
                 <div class="metric-bar"><div class="metric-fill" style="width: 98%"></div></div>
             </div>
+        </div>
+        
+        <!-- NEW TASK SECTION -->
+        <div class="section new-task-section">
+            <div class="section-header">
+                <div class="section-icon">✨</div>
+                <div class="section-title">Submit New Task</div>
+            </div>
+            <form id="newTaskForm" onsubmit="submitTask(event)">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Select Agent Persona</label>
+                        <select id="agentSelect" class="form-select" required>
+                            <option value="duke-ml">Duke Core (Generalist)</option>
+                            <option value="security-expert">Security Expert</option>
+                            <option value="ml-expert">ML Research Scientist</option>
+                            <option value="systems-expert">Systems Architect</option>
+                            <option value="backend-expert">Senior Backend Engineer</option>
+                            <option value="advanced-expert">Visionary Research Engineer</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Task Description</label>
+                        <input type="text" id="taskDescription" class="form-input" placeholder="e.g., Audit our AWS IAM policies for privilege escalation risks..." required>
+                    </div>
+                    <div class="form-group">
+                        <button type="submit" class="btn-primary" style="width: 100%">Submit Task</button>
+                    </div>
+                </div>
+            </form>
         </div>
 
         <div class="section">
@@ -1448,10 +1677,6 @@ async def get_dashboard():
 
         <div class="section">
             <div class="section-header">
-                <div class="section-icon">🤖</div>
-                <div class="section-title">Agent Performance</div>
-            <div class="section">
-            <div class="section-header">
                 <div class="section-icon">📚</div>
                 <div class="section-title">Training Data Collection</div>
             </div>
@@ -1474,6 +1699,11 @@ async def get_dashboard():
                 </table>
             </div>
         </div>    
+
+        <div class="section">
+            <div class="section-header">
+                <div class="section-icon">🤖</div>
+                <div class="section-title">Agent Performance</div>
             </div>
             <div class="table-wrapper">
                 <table>
@@ -1534,10 +1764,62 @@ async def get_dashboard():
                 updateAgentsTable(agents);
                 updateDukeStatus(model);
                 updateLastUpdate();
-                await updateTrainingStats();  // 👈 ADD THIS LINE
+                await updateTrainingStats();
 
             } catch (error) {
                 console.error('Error refreshing data:', error);
+            }
+        }
+        
+        // NEW FUNCTION: Submit Task with Agent Selection
+        async function submitTask(event) {
+            event.preventDefault();
+            
+            const agent = document.getElementById('agentSelect').value;
+            const description = document.getElementById('taskDescription').value;
+            const submitBtn = event.target.querySelector('button');
+            
+            // Visual feedback
+            const originalText = submitBtn.innerText;
+            submitBtn.innerText = 'Submitting...';
+            submitBtn.disabled = true;
+            
+            try {
+                const response = await fetch('/tasks/submit', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        description: description,
+                        agent: agent,
+                        complexity: 7, // Default complexity for manual tasks
+                        buyer_id: "manual-user" // Placeholder
+                    })
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    
+                    // Clear form
+                    document.getElementById('taskDescription').value = '';
+                    
+                    // Show success animation or toast (optional, for now just refresh)
+                    await refreshData();
+                    
+                    // Open the new task modal immediately
+                    if (result.id) {
+                        showTaskModal(result.id);
+                    }
+                } else {
+                    alert('Failed to submit task. Please check server logs.');
+                }
+            } catch (error) {
+                console.error('Error submitting task:', error);
+                alert('Error submitting task');
+            } finally {
+                submitBtn.innerText = originalText;
+                submitBtn.disabled = false;
             }
         }
 
@@ -1624,45 +1906,47 @@ async def get_dashboard():
             const seconds = String(now.getSeconds()).padStart(2, '0');
             document.getElementById('lastUpdate').textContent = `${hours}:${minutes}:${seconds}`;
         }
-async function updateTrainingStats() {
-        try {
-            const response = await fetch('/training/stats');
-            const data = await response.json();
-            const stats = data.data;
-            
-            const tbody = document.getElementById('trainingStatsBody');
-            if (!stats || stats.total_calls === 0) {
+
+        async function updateTrainingStats() {
+            try {
+                const response = await fetch('/training/stats');
+                const data = await response.json();
+                const stats = data.data;
+                
+                const tbody = document.getElementById('trainingStatsBody');
+                if (!stats || stats.total_calls === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="5" style="text-align: center; padding: 40px; color: var(--text-secondary);">
+                                No training data yet. Submit tasks to start collecting data.
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+                
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="5" style="text-align: center; padding: 40px; color: var(--text-secondary);">
-                            No training data yet. Submit tasks to start collecting data.
+                        <td><strong>${stats.total_calls || 0}</strong></td>
+                        <td style="color: var(--success);"><strong>${stats.successful_calls || 0}</strong></td>
+                        <td style="color: var(--danger);"><strong>${stats.failed_calls || 0}</strong></td>
+                        <td style="color: var(--info);"><strong>${stats.training_samples_available || 0}</strong></td>
+                        <td style="color: var(--warning);"><strong>$${(stats.estimated_cost_usd || 0).toFixed(4)}</strong></td>
+                    </tr>
+                `;
+            } catch (error) {
+                console.error('Error fetching training stats:', error);
+                const tbody = document.getElementById('trainingStatsBody');
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="5" style="text-align: center; padding: 40px; color: var(--danger);">
+                            Error loading training stats
                         </td>
                     </tr>
                 `;
-                return;
             }
-            
-            tbody.innerHTML = `
-                <tr>
-                    <td><strong>${stats.total_calls || 0}</strong></td>
-                    <td style="color: var(--success);"><strong>${stats.successful_calls || 0}</strong></td>
-                    <td style="color: var(--danger);"><strong>${stats.failed_calls || 0}</strong></td>
-                    <td style="color: var(--info);"><strong>${stats.training_samples_available || 0}</strong></td>
-                    <td style="color: var(--warning);"><strong>$${(stats.estimated_cost_usd || 0).toFixed(4)}</strong></td>
-                </tr>
-            `;
-        } catch (error) {
-            console.error('Error fetching training stats:', error);
-            const tbody = document.getElementById('trainingStatsBody');
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="5" style="text-align: center; padding: 40px; color: var(--danger);">
-                        Error loading training stats
-                    </td>
-                </tr>
-            `;
         }
-    }
+
         function showTaskModal(taskId) {
             fetch(`/tasks/${taskId}`)
                 .then(r => r.json())
@@ -1708,7 +1992,7 @@ async function updateTrainingStats() {
                         ${task.result ? `
                         <div class="modal-field">
                             <div class="modal-field-label">Result</div>
-                            <div class="modal-field-value">${task.result.substring(0, 500)}${task.result.length > 500 ? '...' : ''}</div>
+                            <div class="modal-field-value" style="white-space: pre-wrap; font-family: monospace; font-size: 13px;">${task.result}</div>
                         </div>
                         ` : ''}
                         ${task.error_message ? `
@@ -1755,212 +2039,453 @@ async def get_task(task_id: str, db: Session = Depends(get_db)):
     return task
 
 @app.post("/tasks/submit")
-async def submit_task(task: TaskRequest, db: Session = Depends(get_db), background_tasks: BackgroundTasks = None):
+async def submit_task(request: dict, db: Session = Depends(get_db), background_tasks: BackgroundTasks = None):
+    """Submit task with persona selection"""
     task_id = str(uuid.uuid4())
     
-    # Calculate price based on complexity
-    price_satoshis = task.complexity * 200000
+    agent_name = request.get('agent', 'duke-ml')
+    if agent_name not in SPECIALIST_PERSONAS:
+        agent_name = 'duke-ml'
     
-    # Create task
+    description = request.get('description', '')
+    complexity = request.get('complexity', 7)
+    buyer_id = request.get('buyer_id', 'manual-user')
+    
+    price_satoshis = int(complexity * 200000)
+    
+    # NOW WITH PERSONA TRACKING
     new_task = Task(
         id=task_id,
-        description=task.description,
-        complexity=task.complexity,
-        buyer_id=task.buyer_id,
-        agent_name="openai-gpt4",
+        description=description,
+        complexity=complexity,
+        buyer_id=buyer_id,
+        agent_name=agent_name,
         price_satoshis=price_satoshis,
-        status="pending"
+        status="pending",
+        persona_used=agent_name  # ✅ NOW THIS WORKS
     )
     
     db.add(new_task)
     db.commit()
     
-    logger.info(f"✅ Task {task_id} created: {task.description[:60]}")
-    logger.info(f"   💰 Price: {price_satoshis:,} sat | Complexity: {task.complexity}/10")
+    logger.info(f"✅ Task {task_id} created with persona: {agent_name}")
     
-    # Process in background
     if background_tasks:
-        background_tasks.add_task(process_task_with_ai, task_id, task.description, task.complexity, db, task.buyer_id)
-    
-    return {"id": task_id, "status": "pending"}
-
-async def process_task_with_ai(task_id: str, description: str, complexity: int, db: Session, buyer_id: str):
-    """Process task with AI (OpenAI or Duke)"""
-    task = db.query(Task).filter(Task.id == task_id).first()
-    if not task:
-        return
-    
-    start_time = datetime.now(timezone.utc)
-    task.status = "processing"
-    task.started_at = start_time
-    db.commit()
-    
-    logger.info(f"⏳ Task {task_id} now processing with {task.agent_name}...")
-    
-    # ==================== DUKE ROUTING LOGIC ====================
-    # Get training sample count from logger if available
-    training_count = 0
-    try:
-        stats = get_training_stats()
-        training_count = stats.get("training_samples_available", 0)
-    except Exception as e:
-        logger.warning(f"⚠️ Could not get logger training stats: {e}")
-        training_count = db.query(TrainingData).count()
-    
-    # TRY can_handle_task first, but OVERRIDE if Duke exists and complexity <= 7
-    use_duke = duke_pipeline.can_handle_task(complexity, training_count)
-    if not use_duke and duke_pipeline.model is not None and complexity <= 7:
-        logger.info(f"🔄 Duke model exists and ready, forcing use for complexity {complexity}")
-        use_duke = True
-    # ============================================================
-
-    result = None
-    used_agent = task.agent_name
-    
-    if use_duke:
-        logger.info(f"🧠 Task {task_id} assigned to DUKE (complexity={complexity}, training_samples={training_count})")
-        try:
-            result = await duke_pipeline.process_with_duke(description, complexity)
-            used_agent = "duke-ml"
-            logger.info(f"✅ Duke processed task {task_id}")
-        except Exception as e:
-            logger.warning(f"⚠️ Duke failed, falling back to OpenAI: {e}")
-            use_duke = False
-    
-    if not use_duke:
-        logger.info(f"🤖 Task {task_id} assigned to OpenAI (complexity={complexity}, training_samples={training_count})")
-        result = await call_openai(description, complexity, task_id)
-    
-    if result:
-        task.status = "completed"
-        task.result = result
-        task.agent_name = used_agent
-        task.completed_at = datetime.now(timezone.utc)
-        task.processing_time_seconds = (task.completed_at - start_time).total_seconds()
-        
-        db.commit()
-        
-        logger.info(f"✅ Task {task_id} COMPLETED by {used_agent} in {task.processing_time_seconds:.2f}s")
-        
-        # ENHANCED: Capture for Duke training
-        training_entry = TrainingData(
-            id=str(uuid.uuid4()),
-            task_id=task_id,
-            input_data={
-                "description": description,
-                "complexity": complexity,
-                "processing_time": task.processing_time_seconds,
-            },
-            output_data={
-                "result": result[:1000],
-                "success": True,
-                "full_length": len(result),
-                "agent": used_agent,
-            },
-            success=True,
-            agent_name=used_agent,
+        background_tasks.add_task(
+            process_task_with_ai, 
+            task_id, 
+            description, 
+            complexity, 
+            db, 
+            buyer_id
         )
-        db.add(training_entry)
-        db.commit()
+    
+    return {"id": task_id, "status": "pending", "agent": agent_name}
 
-        logger.info("💾 Training entry created for Duke learning")
 
-        # Add response to Duke's response database
-        if result and len(result) > 50:
-            try:
-                input_embedding = duke_pipeline.embedder.embed(description)
-                duke_pipeline.generator.add_response(
-                    input_embedding,
-                    result,
-                    metadata={
-                        "complexity": complexity,
-                        "agent": used_agent,
-                        "timestamp": datetime.now(timezone.utc).isoformat()
-                    }
-                )
-                logger.info(f"✅ Response stored for Duke learning: {len(duke_pipeline.generator.response_database)} total")
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to store response: {e}")
 
-        # Trigger Duke training if needed
-        training_count = db.query(TrainingData).count()
-        if training_count % 25 == 0 and training_count >= 50:
-            logger.info(f"🧠 Triggering Duke REAL training ({training_count} samples)")
-            asyncio.create_task(duke_pipeline.train_model(db))
-    else:
-        task.status = "failed"
-        task.error_message = "Failed to get response from AI"
-        db.commit()
-        logger.error(f"❌ Task {task_id} FAILED")
+@app.get("/personas")
+async def get_personas():
+    """Get all available specialist personas"""
+    return {
+        "personas": [
+            {
+                "id": key,
+                "name": value["name"],
+                "reputation_multiplier": value["reputation_multiplier"],
+                "specialization": key.replace("-", " ").title()
+            }
+            for key, value in SPECIALIST_PERSONAS.items()
+        ]
+    }
 
-async def call_openai(description: str, complexity: int, task_id: str = None):
-    """Call OpenAI API with automatic training data logging"""
+@app.get("/personas/{persona_type}/metrics")
+async def get_persona_metrics(persona_type: str, db: Session = Depends(get_db)):
+    """Get performance metrics for specific persona"""
+    metrics = db.query(PersonaMetrics).filter(
+        PersonaMetrics.persona_type == persona_type
+    ).first()
+    
+    if not metrics:
+        return {
+            "persona_type": persona_type,
+            "tasks_completed": 0,
+            "message": "No data yet for this persona"
+        }
+    
+    return {
+        "persona_type": metrics.persona_type,
+        "tasks_completed": metrics.tasks_completed,
+        "average_complexity": round(metrics.average_complexity, 2),
+        "keyword_accuracy": round(metrics.keyword_accuracy * 100, 2),
+        "updated_at": metrics.updated_at
+    }
+
+@app.get("/personas/compare")
+async def compare_personas(db: Session = Depends(get_db)):
+    """Compare all persona performance"""
+    all_metrics = db.query(PersonaMetrics).all()
+    
+    comparison = []
+    for metrics in all_metrics:
+        comparison.append({
+            "persona": metrics.persona_type,
+            "tasks": metrics.tasks_completed,
+            "avg_complexity": round(metrics.average_complexity, 1),
+            "keyword_accuracy": round(metrics.keyword_accuracy * 100, 1),
+            "reputation": SPECIALIST_PERSONAS[metrics.persona_type]["reputation_multiplier"]
+        })
+    
+    # Sort by tasks completed
+    comparison.sort(key=lambda x: x["tasks"], reverse=True)
+    
+    return {"personas": comparison, "total_personas": len(comparison)}
+
+async def call_openai_for_persona(
+    description: str,
+    complexity: int,
+    persona_type: str = "duke-ml",
+    task_id: str = None
+) -> Optional[str]:
+    """Call OpenAI to get specialized response for a persona"""
     try:
+        persona = SPECIALIST_PERSONAS.get(persona_type, SPECIALIST_PERSONAS["duke-ml"])
+        system_prompt = persona["system_prompt"]
+        persona_name = persona["name"]
+        
+        logger.info(f"📤 Calling OpenAI for {persona_name} (persona={persona_type})")
+        
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 OPENAI_API_URL,
-                headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
+                headers={
+                    "Authorization": f"Bearer {OPENAI_API_KEY}",
+                    "Content-Type": "application/json"
+                },
                 json={
                     "model": OPENAI_MODEL,
                     "messages": [
-                        {"role": "system", "content": "You are a helpful AI assistant. Provide concise, accurate responses."},
+                        {"role": "system", "content": system_prompt},
                         {"role": "user", "content": description}
                     ],
-                    "max_tokens": 500,
+                    "max_tokens": 800,
                     "temperature": 0.7
                 },
                 timeout=30.0
             )
             
-            if response.status_code == 200:
-                data = response.json()
-                result = data['choices'][0]['message']['content']
-                
-                # 🆕 LOG TO TRAINING DATA
-                log_openai_call(
-                    prompt=description,
-                    response=result,
-                    model=OPENAI_MODEL,
-                    complexity=complexity,
-                    task_id=task_id or "unknown",
-                    success=True,
-                    metadata={
-                        "tokens_used": data.get('usage', {}),
-                        "model": OPENAI_MODEL
-                    }
-                )
-                
-                logger.info(f"✅ Got response from OpenAI + logged for training")
-                return result
-            else:
-                logger.error(f"❌ OpenAI error: {response.status_code}")
-                
-                # 🆕 LOG FAILURE
-                log_openai_call(
-                    prompt=description,
-                    response=None,
-                    model=OPENAI_MODEL,
-                    complexity=complexity,
-                    task_id=task_id or "unknown",
-                    success=False,
-                    error=f"HTTP {response.status_code}"
-                )
+            # Check HTTP status first
+            if response.status_code != 200:
+                logger.error(f"❌ OpenAI HTTP {response.status_code} for {persona_type}: {response.text}")
                 return None
+            
+            # Parse JSON
+            try:
+                data = response.json()
+            except Exception as e:
+                logger.error(f"❌ Failed to parse OpenAI response JSON: {e}")
+                return None
+            
+            # Extract content safely with explicit type checks
+            try:
+                # Validate top level is dict
+                if not isinstance(data, dict):
+                    logger.error(f"❌ OpenAI response is not a dict: {type(data)}")
+                    return None
                 
+                # Get choices
+                if "choices" not in data:
+                    logger.error(f"❌ No 'choices' key in OpenAI response")
+                    return None
+                
+                choices = data["choices"]
+                if not isinstance(choices, list):
+                    logger.error(f"❌ 'choices' is not a list, it's {type(choices)}")
+                    return None
+                
+                if len(choices) == 0:
+                    logger.error(f"❌ 'choices' list is empty")
+                    return None
+                
+                # Get first choice - FIX: Access the first element
+                first_choice = choices[0]  # ✅ Fixed: was choices, now choices[0]
+                if not isinstance(first_choice, dict):
+                    logger.error(f"❌ First choice is not a dict, it's {type(first_choice)}")
+                    return None
+                
+                # Get message
+                if "message" not in first_choice:
+                    logger.error(f"❌ No 'message' key in first choice")
+                    return None
+                
+                message = first_choice["message"]
+                if not isinstance(message, dict):
+                    logger.error(f"❌ 'message' is not a dict, it's {type(message)}")
+                    return None
+                
+                # Get content
+                if "content" not in message:
+                    logger.error(f"❌ No 'content' key in message")
+                    return None
+                
+                content = message["content"]
+                if not isinstance(content, str):
+                    logger.error(f"❌ 'content' is not a string, it's {type(content)}")
+                    return None
+                
+                if not content.strip():
+                    logger.error(f"❌ 'content' is empty")
+                    return None
+                
+                # Success!
+                logger.info(f"✅ OpenAI responded for {persona_name} ({len(content)} chars)")
+                return content
+            
+            except Exception as e:
+                logger.error(f"❌ Error extracting OpenAI response: {type(e).__name__}: {e}")
+                logger.error(f"   Full response: {data}")
+                return None
+    
     except Exception as e:
-        logger.error(f"❌ OpenAI request failed: {e}")
-        
-        # 🆕 LOG EXCEPTION
-        log_openai_call(
-            prompt=description,
-            response=None,
-            model=OPENAI_MODEL,
-            complexity=complexity,
-            task_id=task_id or "unknown",
-            success=False,
-            error=str(e)
-        )
+        logger.error(f"❌ OpenAI request failed for {persona_type}: {e}")
+        import traceback
+        logger.error(f"   Traceback: {traceback.format_exc()}")
         return None
+
+# ← ADD ABOVE LINE HERE, THEN CONTINUE WITH process_task_with_ai() BELOW
+async def process_task_with_ai(task_id: str, description: str, complexity: int, db: Session, buyer_id: str):
+    """
+    Process task with AI - Duke tries as persona specialist, OpenAI fallback
+    
+    PERSONAS: Integrated as Duke agent specialists
+    - Each persona learns from OpenAI responses
+    - Duke learns persona-specific patterns
+    - Training data tagged with persona for specialization
+    """
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        logger.error(f"❌ Task {task_id} not found")
+        return
+    
+    try:
+        start_time = datetime.now(timezone.utc)
+        
+        # Get persona type from task.agent_name
+        persona_type = task.agent_name or "duke-ml"
+        if persona_type not in SPECIALIST_PERSONAS:
+            persona_type = "duke-ml"
+        
+        logger.info(f"⏳ Task {task_id} processing with persona: {persona_type}")
+        
+        # ============================================
+        # ATTEMPT 1: Try Duke with persona specialization
+        # ============================================
+        result = None
+        used_agent = None
+        
+        training_count = db.query(TrainingData).count()
+        use_duke = (
+            duke_pipeline.model is not None and 
+            training_count >= 50 and 
+            complexity <= 7
+        )
+        
+        if use_duke:
+            logger.info(f"🧠 Duke processing as {SPECIALIST_PERSONAS[persona_type]['name']} (persona={persona_type})")
+            try:
+                result = await duke_pipeline.process_with_duke(description, complexity)
+                used_agent = persona_type
+                logger.info(f"✅ Duke succeeded ({len(result)} chars) with persona={persona_type}")
+            except Exception as e:
+                logger.warning(f"⚠️ Duke failed: {e}")
+                result = None
+        
+        # ============================================
+        # ATTEMPT 2: Fallback to OpenAI - persona learns from this
+        # ============================================
+        if not result:
+            logger.info(f"🤖 OpenAI processing (persona={persona_type} will learn from this)")
+            result = await call_openai_for_persona(
+                description=description,
+                complexity=complexity,
+                persona_type=persona_type,
+                task_id=task_id
+            )
+            used_agent = persona_type if result else "openai-gpt4"
+        
+        # ============================================
+        # UPDATE TASK & LOG FOR PERSONA LEARNING
+        # ============================================
+        if result:
+            task.status = "completed"
+            task.result = result
+            task.agent_name = used_agent
+            task.completed_at = datetime.now(timezone.utc)
+            task.processing_time_seconds = (task.completed_at - start_time).total_seconds()
+            db.commit()
+            logger.info(f"✅ Task {task_id} COMPLETED by {used_agent} (persona={persona_type})")
+            
+            # ============================================
+            # STORE FOR PERSONA LEARNING (CRITICAL)
+            # ============================================
+            try:
+                training_entry = TrainingData(
+                    id=str(uuid.uuid4()),
+                    task_id=task_id,
+                    input_data=json.dumps({
+                        "description": description,
+                        "complexity": complexity,
+                        "persona": persona_type
+                    }),
+                    output_data=json.dumps({
+                        "result": result,
+                        "agent": used_agent,
+                        "persona": persona_type
+                    }),
+                    success=True,
+                    agent_name=used_agent
+                )
+                db.add(training_entry)
+                db.commit()
+                logger.info(f"📝 Logged training data for {persona_type} to learn from ({len(result)} chars)")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not log training data: {e}")
+        else:
+            task.status = "failed"
+            task.error_message = "Failed to get response from AI"
+            task.completed_at = datetime.now(timezone.utc)
+            db.commit()
+            logger.error(f"❌ Task {task_id} failed: No response from AI")
+    
+    except Exception as e:
+        logger.error(f"❌ Task {task_id} exception: {e}")
+        task.status = "failed"
+        task.error_message = str(e)
+        task.completed_at = datetime.now(timezone.utc)
+        db.commit()
+
+
+# =====================================================
+# CORRECTED FUNCTIONS - PERSONAS AS DUKE AGENTS
+# =====================================================
+# Your personas are agent specialists that learn from OpenAI responses
+# Duke learns persona-specific patterns from each specialist's answers
+# =====================================================
+
+async def process_task_with_ai(task_id: str, description: str, complexity: int, db: Session, buyer_id: str):
+    """
+    Process task with AI - Duke tries as persona specialist, OpenAI fallback
+    
+    PERSONAS: Integrated as Duke agent specialists
+    - Each persona learns from OpenAI responses
+    - Duke learns persona-specific patterns
+    - Training data tagged with persona for specialization
+    """
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        logger.error(f"❌ Task {task_id} not found")
+        return
+    
+    try:
+        start_time = datetime.now(timezone.utc)
+        
+        # Get persona type from task.agent_name
+        persona_type = task.agent_name or "duke-ml"
+        if persona_type not in SPECIALIST_PERSONAS:
+            persona_type = "duke-ml"
+        
+        logger.info(f"⏳ Task {task_id} processing with persona: {persona_type}")
+        
+        # ============================================
+        # ATTEMPT 1: Try Duke with persona specialization
+        # ============================================
+        result = None
+        used_agent = None
+        
+        training_count = db.query(TrainingData).count()
+        use_duke = (
+            duke_pipeline.model is not None and 
+            training_count >= 50 and 
+            complexity <= 7
+        )
+        
+        if use_duke:
+            logger.info(f"🧠 Duke processing as {SPECIALIST_PERSONAS[persona_type]['name']} (persona={persona_type})")
+            try:
+                # FIXED: Call with 2 args only (description, complexity)
+                # Duke model learns persona-specific patterns internally
+                result = await duke_pipeline.process_with_duke(description, complexity)
+                used_agent = persona_type
+                logger.info(f"✅ Duke succeeded ({len(result)} chars) with persona={persona_type}")
+            except Exception as e:
+                logger.warning(f"⚠️ Duke failed: {e}")
+                result = None
+        
+        # ============================================
+        # ATTEMPT 2: Fallback to OpenAI - persona learns from this
+        # ============================================
+        if not result:
+            logger.info(f"🤖 OpenAI processing (persona={persona_type} will learn from this)")
+            result = await call_openai_for_persona(
+                description=description,
+                complexity=complexity,
+                persona_type=persona_type,
+                task_id=task_id
+            )
+            used_agent = persona_type if result else "openai-gpt4"
+        
+        # ============================================
+        # UPDATE TASK & LOG FOR PERSONA LEARNING
+        # ============================================
+        if result:
+            task.status = "completed"
+            task.result = result
+            task.agent_name = used_agent
+            task.completed_at = datetime.now(timezone.utc)
+            task.processing_time_seconds = (task.completed_at - start_time).total_seconds()
+            db.commit()
+            logger.info(f"✅ Task {task_id} COMPLETED by {used_agent} (persona={persona_type})")
+            
+            # ============================================
+            # STORE FOR PERSONA LEARNING (CRITICAL)
+            # ============================================
+            try:
+                training_entry = TrainingData(
+                    id=str(uuid.uuid4()),
+                    task_id=task_id,
+                    input_data=json.dumps({
+                        "description": description,
+                        "complexity": complexity,
+                        "persona": persona_type  # ← PERSONA TAG FOR SPECIALIZATION
+                    }),
+                    output_data=json.dumps({
+                        "result": result,
+                        "agent": used_agent,
+                        "persona": persona_type  # ← PERSONA TAG FOR SPECIALIZATION
+                    }),
+                    success=True,
+                    agent_name=used_agent,
+                    persona_type=persona_type  # ← EXPLICIT PERSONA COLUMN
+                )
+                db.add(training_entry)
+                db.commit()
+                logger.info(f"📝 Logged training data for {persona_type} to learn from ({len(result)} chars)")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not log training data: {e}")
+        else:
+            task.status = "failed"
+            task.error_message = "Failed to get response from AI"
+            task.completed_at = datetime.now(timezone.utc)
+            db.commit()
+            logger.error(f"❌ Task {task_id} failed: No response from AI")
+    
+    except Exception as e:
+        logger.error(f"❌ Task {task_id} exception: {e}")
+        task.status = "failed"
+        task.error_message = str(e)
+        task.completed_at = datetime.now(timezone.utc)
+        db.commit()
+
 
 @app.get("/agents")
 async def get_agents(db: Session = Depends(get_db)):
@@ -1969,22 +2494,29 @@ async def get_agents(db: Session = Depends(get_db)):
 
 @app.get("/model/status")
 async def get_model_status(db: Session = Depends(get_db)):
-    """Get current Duke model status"""
-    if not duke_pipeline.model:
-        return {"status": "not_trained", "version": 0}
+    # FIX: Use correct column name created_at (with underscore)
+    model_version = db.query(ModelVersionBase).order_by(
+        desc(ModelVersionBase.created_at)
+    ).first()
     
-    model_version = db.query(ModelVersion).order_by(desc(ModelVersion.version_number)).first()
+    if not model_version:
+        return {
+            "status": "not_initialized",
+            "version": 0,
+            "training_samples": 0
+        }
     
     return {
-        "status": "ready",
-        "version": duke_pipeline.model_version,
-        "accuracy": model_version.validation_accuracy if model_version else 0.0,
-        "f1_score": model_version.validation_f1 if model_version else 0.0,
-        "training_samples": model_version.training_samples if model_version else 0,
-        "is_production": model_version.is_production if model_version else False,
-        "vocabulary_size": duke_pipeline.embedder.vocab_size,
-        "created_at": model_version.created_at if model_version else None
+        "status": "ready" if model_version.is_production else "training",
+        "version": model_version.version_number,
+        "accuracy": model_version.validation_accuracy,
+        "f1_score": model_version.validation_f1,
+        "training_samples": model_version.training_samples,
+        "is_production": model_version.is_production,
+        "vocabulary_size": model_version.model_info.get("vocabulary_size", 0) if model_version.model_info else 0,
+        "created_at": model_version.created_at.isoformat() if model_version.created_at else None
     }
+
 
 @app.get("/model/generator-stats", tags=["Duke Learning"])
 async def get_generator_stats(db: Session = Depends(get_db)):
@@ -2114,18 +2646,35 @@ async def export_training_data(format: str = "simple"):
 if __name__ == "__main__":
     import uvicorn
     print("╔════════════════════════════════════════════════════════════════╗")
-    print("║     AICP Coordinator + REAL Duke Machine Learning v4.2.0      ║")
-    print("║        ENTERPRISE DASHBOARD WITH AUTO-REFRESH & ANIMATIONS    ║")
+    print("║  AICP Coordinator + REAL Duke Machine Learning v5.0.0-Phase4 ║")
+    print("║        ENTERPRISE DASHBOARD + SPECIALIST PERSONAS             ║")
     print("╚════════════════════════════════════════════════════════════════╝")
     print()
     print("✅ FastAPI:        Configured")
     print("✅ OpenAI:         Configured")
     print("✅ Duke Learning:  ✅ REAL ML ENABLED (PyTorch Neural Network)")
-    print("✅ Database:       SQLite")
+    print("✅ Database:       PostgreSQL")
     print("✅ Dashboard:      http://localhost:8000/dashboard")
     print("✅ Auto-Refresh:   Every 5 seconds")
     print("✅ Design:         Professional Glass-morphism")
     print()
+    print("🎭 SPECIALIST PERSONAS ENABLED:")
+    print("   ┌─────────────────────────────────────────────────────────┐")
+    for key, value in SPECIALIST_PERSONAS.items():
+        rep_stars = "⭐" * int(value['reputation_multiplier'])
+        persona_name = value['name']
+        rep_value = value['reputation_multiplier']
+        print(f"   │ {persona_name:30} {rep_stars:8} ({rep_value}x) │")
+    print("   └─────────────────────────────────────────────────────────┘")
+    print()
+    print("📊 NEW ENDPOINTS:")
+    print("   • GET  /personas                  - List all specialists")
+    print("   • GET  /personas/{type}/metrics   - Persona performance")
+    print("   • GET  /personas/compare          - Compare all personas")
+    print("   • POST /tasks/submit              - Now accepts 'agent' field")
+    print()
     print("🚀 Starting server...")
+    print("   Access dashboard: http://localhost:8000/dashboard")
+    print("   API docs:         http://localhost:8000/docs")
     print()
     uvicorn.run(app, host="0.0.0.0", port=8000)
